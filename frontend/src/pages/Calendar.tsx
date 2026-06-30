@@ -5,6 +5,7 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  Switch,
   TextField,
   MenuItem,
   ToggleButtonGroup,
@@ -306,14 +307,19 @@ export default function Calendar() {
               const paymentLabel = PAYMENT_METHODS.find((m) => m.value === item.paymentMethod)?.label
 
               return (
-                <div key={item.id} className="flex items-center gap-3 py-3">
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-3 py-3 transition-opacity ${!item.isActive ? 'opacity-45' : ''}`}
+                >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">
                       <Chip
                         label={isIncome ? 'Ingreso' : 'Egreso'}
                         size="small"
                         sx={{
-                          bgcolor: isIncome ? '#4caf50' : '#f44336',
+                          bgcolor: item.isActive
+                            ? (isIncome ? '#4caf50' : '#f44336')
+                            : '#9e9e9e',
                           color: 'white',
                           fontWeight: 700,
                           fontSize: 11,
@@ -323,6 +329,9 @@ export default function Calendar() {
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
                         {formatCurrency(item.amount)}
                       </Typography>
+                      {!item.isActive && (
+                        <Chip label="Pausada" size="small" sx={{ fontSize: 10, height: 18 }} />
+                      )}
                     </div>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {item.description || item.category}
@@ -336,13 +345,25 @@ export default function Calendar() {
                       </Typography>
                     </div>
                   </div>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => { recurringService.delete(item.id); load() }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Tooltip title={item.isActive ? 'Pausar' : 'Activar'}>
+                      <Switch
+                        size="small"
+                        checked={item.isActive}
+                        onChange={() => { recurringService.toggleActive(item.id); load() }}
+                        color={isIncome ? 'success' : 'error'}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Eliminar">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => { recurringService.delete(item.id); load() }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </div>
                 </div>
               )
             })}

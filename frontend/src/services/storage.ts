@@ -4,11 +4,13 @@ import type {
   Debt,
   SavingsGoal,
   FixedExpense,
+  Wallet,
   TransactionFormData,
   RecurringTransactionFormData,
   DebtFormData,
   SavingsGoalFormData,
   FixedExpenseFormData,
+  WalletFormData,
 } from '@/types'
 
 const KEYS = {
@@ -17,7 +19,31 @@ const KEYS = {
   debts: 'fa_debts',
   savings: 'fa_savings',
   fixedExpenses: 'fa_fixed_expenses',
+  wallets: 'fa_wallets',
+  settings: 'fa_settings',
 } as const
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+export interface AppSettings {
+  userName: string
+}
+
+const DEFAULT_SETTINGS: AppSettings = { userName: 'Usuario' }
+
+export const settingsService = {
+  get(): AppSettings {
+    try {
+      const raw = localStorage.getItem(KEYS.settings)
+      return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS
+    } catch {
+      return DEFAULT_SETTINGS
+    }
+  },
+  set(data: Partial<AppSettings>): void {
+    localStorage.setItem(KEYS.settings, JSON.stringify({ ...this.get(), ...data }))
+  },
+}
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -251,5 +277,57 @@ export const fixedExpenseService = {
     return this.getAll()
       .filter((f) => f.isActive)
       .reduce((sum, f) => sum + f.amount, 0)
+  },
+}
+
+// ─── Wallets ──────────────────────────────────────────────────────────────────
+
+export const walletService = {
+  getAll(): Wallet[] {
+    return getAll<Wallet>(KEYS.wallets)
+  },
+
+  create(data: WalletFormData): Wallet {
+    const item: Wallet = { ...data, id: generateId(), createdAt: new Date().toISOString() }
+    saveAll(KEYS.wallets, [item, ...this.getAll()])
+    return item
+  },
+
+  update(id: string, data: Partial<WalletFormData>): Wallet | null {
+    const all = this.getAll()
+    const idx = all.findIndex((w) => w.id === id)
+    if (idx === -1) return null
+    all[idx] = { ...all[idx], ...data }
+    saveAll(KEYS.wallets, all)
+    return all[idx]
+  },
+
+  delete(id: string): void {
+    saveAll(KEYS.wallets, this.getAll().filter((w) => w.id !== id))
+  },
+
+  adjustBalance(id: string, delta: number): void {
+    const all = this.getAll()
+    const idx = all.findIndex((w) => w.id === id)
+    if (idx !== -1) {
+      all[idx].balance = Math.max(0, all[idx].balance + delta)
+      saveAll(KEYS.wallets, all)
+    }
+  },
+
+  transfer(fromId: string, toId: string, amount: number): boolean {
+    const all = this.getAll()
+    const fromIdx = all.findIndex((w) => w.id === fromId)
+    const toIdx = all.findIndex((w) => w.id === toId)
+    if (fromIdx === -1 || toIdx === -1 || amount <= 0) return false
+    if (all[fromIdx].balance < amount) return false
+    all[fromIdx].balance -= amount
+    all[toIdx].balance += amount
+    saveAll(KEYS.wallets, all)
+    return true
+  },
+
+  getTotal(): number {
+    return this.getAll().reduce((s, w) => s + w.balance, 0)
   },
 }

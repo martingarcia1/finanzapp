@@ -19,24 +19,28 @@ import {
 } from '@mui/material'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
-import RepeatIcon from '@mui/icons-material/Repeat'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
 import SavingsIcon from '@mui/icons-material/Savings'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import MenuIcon from '@mui/icons-material/Menu'
+import HomeIcon from '@mui/icons-material/Home'
+import WalletIcon from '@mui/icons-material/Wallet'
+import SettingsIcon from '@mui/icons-material/Settings'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
 
 const DRAWER_WIDTH = 240
 
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
+  { label: 'Billeteras',    path: '/wallets',      icon: <WalletIcon /> },
   { label: 'Transacciones', path: '/transactions', icon: <ReceiptLongIcon /> },
-  { label: 'Recurrentes', path: '/recurring', icon: <RepeatIcon /> },
-  { label: 'Deudas', path: '/debts', icon: <AccountBalanceWalletIcon /> },
+  { label: 'Deudas',        path: '/debts',        icon: <AccountBalanceWalletIcon /> },
   { label: 'Metas de Ahorro', path: '/savings', icon: <SavingsIcon /> },
+  { label: 'Gastos Fijos', path: '/fixed-expenses', icon: <HomeIcon /> },
   { label: 'Calendario', path: '/calendar', icon: <CalendarMonthIcon /> },
   { label: 'Estadísticas', path: '/statistics', icon: <BarChartIcon /> },
+  { label: 'Ajustes',      path: '/settings',   icon: <SettingsIcon /> },
 ]
 
 interface Props {

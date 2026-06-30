@@ -4,6 +4,7 @@ export type TransactionType = 'income' | 'expense'
 export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'transfer' | 'personal_pay' | 'mercado_pago'
 export type RecurrencePattern = 'weekly' | 'monthly'
 export type DebtDirection = 'owed_to_me' | 'i_owe'
+export type WalletType = 'cash' | 'bank' | 'mercado_pago' | 'personal_pay' | 'crypto' | 'other'
 
 // ─── Entities ────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,16 @@ export interface SavingsGoal {
   createdAt: string
 }
 
+export interface Wallet {
+  id: string
+  name: string
+  type: WalletType
+  balance: number
+  color: string
+  description: string
+  createdAt: string
+}
+
 export interface FixedExpense {
   id: string
   name: string
@@ -77,6 +88,7 @@ export type TransactionFormData = Omit<Transaction, 'id' | 'createdAt'>
 export type RecurringTransactionFormData = Omit<RecurringTransaction, 'id' | 'createdAt'>
 export type DebtFormData = Omit<Debt, 'id' | 'createdAt' | 'isPaid' | 'paidAt' | 'originalAmount'>
 export type SavingsGoalFormData = Omit<SavingsGoal, 'id' | 'createdAt' | 'isCompleted' | 'completedAt'>
+export type WalletFormData = Omit<Wallet, 'id' | 'createdAt'>
 export type FixedExpenseFormData = Omit<FixedExpense, 'id' | 'createdAt'>
 
 // ─── Dashboard stats ──────────────────────────────────────────────────────────
@@ -119,6 +131,20 @@ export const EXPENSE_CATEGORIES = [
   'Viajes',
   'Otro gasto',
 ] as const
+
+export const WALLET_TYPES: { value: WalletType; label: string; color: string }[] = [
+  { value: 'cash',         label: 'Efectivo',      color: '#4caf50' },
+  { value: 'bank',         label: 'Banco',         color: '#1976d2' },
+  { value: 'mercado_pago', label: 'Mercado Pago',  color: '#00b1ea' },
+  { value: 'personal_pay', label: 'Personal Pay',  color: '#7b1fa2' },
+  { value: 'crypto',       label: 'Crypto',        color: '#f57c00' },
+  { value: 'other',        label: 'Otra',          color: '#607d8b' },
+]
+
+export const WALLET_COLORS = [
+  '#1976d2', '#4caf50', '#f57c00', '#7b1fa2',
+  '#c62828', '#00796b', '#607d8b', '#00b1ea',
+]
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'cash', label: 'Efectivo' },
