@@ -1,0 +1,6 @@
+@FinanzApp.API_HostAddress = http://localhost:5192
+
+GET {{FinanzApp.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -11,6 +11,12 @@ import {
   Avatar,
   Divider,
   Alert,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  CircularProgress,
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PersonIcon from '@mui/icons-material/Person'
@@ -18,6 +24,8 @@ import DownloadIcon from '@mui/icons-material/Download'
 import UploadIcon from '@mui/icons-material/Upload'
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import FingerprintIcon from '@mui/icons-material/Fingerprint'
+import DeleteIcon from '@mui/icons-material/Delete'
 import {
   transactionService,
   recurringService,
@@ -27,6 +35,8 @@ import {
   walletService,
   settingsService,
 } from '@/services/storage'
+import api from '@/services/api'
+import { registerBiometric, isWebAuthnSupported } from '@/services/webauthn'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +103,45 @@ export default function Settings() {
   const [clearOpen, setClearOpen] = useState(false)
   const [clearConfirm, setClearConfirm] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Biométrica ──────────────────────────────────────────────────────────────
+  interface FidoCred { id: string; deviceName: string | null; createdAt: string; lastUsedAt: string | null }
+  const [credentials, setCredentials] = useState<FidoCred[]>([])
+  const [bioDeviceName, setBioDeviceName] = useState('')
+  const [bioLoading, setBioLoading] = useState(false)
+  const [bioError, setBioError] = useState('')
+  const [bioSuccess, setBioSuccess] = useState('')
+
+  const loadCredentials = async () => {
+    try {
+      const { data } = await api.get('/auth/credentials')
+      setCredentials(data)
+    } catch { /* not logged in or no backend */ }
+  }
+
+  useEffect(() => { loadCredentials() }, [])
+
+  const handleRegisterBiometric = async () => {
+    setBioError(''); setBioSuccess('')
+    setBioLoading(true)
+    try {
+      await registerBiometric(bioDeviceName || 'Mi dispositivo')
+      setBioSuccess('Biométrica registrada correctamente')
+      setBioDeviceName('')
+      loadCredentials()
+    } catch (e: unknown) {
+      setBioError((e as { message?: string })?.message ?? 'Error al registrar')
+    } finally {
+      setBioLoading(false)
+    }
+  }
+
+  const handleDeleteCredential = async (id: string) => {
+    try {
+      await api.delete(`/auth/credentials/${id}`)
+      setCredentials((c) => c.filter((x) => x.id !== id))
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     setUserName(settingsService.get().userName)
@@ -315,6 +364,60 @@ export default function Settings() {
           </Button>
         </div>
       </Section>
+
+      {/* ── Biométrica ── */}
+      {isWebAuthnSupported() && (
+        <Section title="Acceso biométrico" icon={<FingerprintIcon sx={{ color: '#1565c0' }} />}>
+          {bioError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setBioError('')}>{bioError}</Alert>}
+          {bioSuccess && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setBioSuccess('')}>{bioSuccess}</Alert>}
+
+          {credentials.length > 0 && (
+            <>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>Dispositivos registrados</Typography>
+              <List dense disablePadding sx={{ mb: 2 }}>
+                {credentials.map((c) => (
+                  <ListItem key={c.id} disablePadding sx={{ py: 0.5 }}>
+                    <ListItemText
+                      primary={c.deviceName ?? 'Dispositivo'}
+                      secondary={`Registrado ${new Date(c.createdAt).toLocaleDateString('es-AR')}${c.lastUsedAt ? ` · Último uso ${new Date(c.lastUsedAt).toLocaleDateString('es-AR')}` : ''}`}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton size="small" color="error" onClick={() => handleDeleteCredential(c.id)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+              <Divider sx={{ mb: 2 }} />
+            </>
+          )}
+
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>Agregar dispositivo</Typography>
+          <div className="flex gap-3 items-start">
+            <TextField
+              label="Nombre del dispositivo"
+              size="small"
+              fullWidth
+              value={bioDeviceName}
+              onChange={(e) => setBioDeviceName(e.target.value)}
+              placeholder="Ej: Mi celular, Laptop"
+            />
+            <Button
+              variant="contained"
+              startIcon={bioLoading ? <CircularProgress size={16} color="inherit" /> : <FingerprintIcon />}
+              onClick={handleRegisterBiometric}
+              disabled={bioLoading}
+              sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Registrar
+            </Button>
+          </div>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            Se usará huella dactilar, Face ID o Windows Hello según tu dispositivo.
+          </Typography>
+        </Section>
+      )}
 
       {/* ── Acerca de ── */}
       <div className="bg-gray-50 rounded-xl border border-gray-200 px-5 py-4 text-center">

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 import {
   Box,
   Drawer,
@@ -28,6 +29,8 @@ import HomeIcon from '@mui/icons-material/Home'
 import WalletIcon from '@mui/icons-material/Wallet'
 import SettingsIcon from '@mui/icons-material/Settings'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
+import LogoutIcon from '@mui/icons-material/Logout'
+import Tooltip from '@mui/material/Tooltip'
 
 const DRAWER_WIDTH = 240
 
@@ -53,6 +56,7 @@ export default function Layout({ children }: Props) {
   const navigate = useNavigate()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+  const { user, logout } = useAuth()
 
   const drawerContent = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -99,10 +103,23 @@ export default function Layout({ children }: Props) {
       </List>
 
       <Divider />
-      <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="caption" color="text.secondary">
-          v1.0 · localStorage
-        </Typography>
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Avatar sx={{ bgcolor: 'primary.light', width: 32, height: 32, fontSize: 14 }}>
+          {user?.userName?.[0]?.toUpperCase() ?? '?'}
+        </Avatar>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user?.userName ?? 'Usuario'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+            {user?.email}
+          </Typography>
+        </Box>
+        <Tooltip title="Cerrar sesión">
+          <IconButton size="small" onClick={logout} sx={{ color: 'text.secondary' }}>
+            <LogoutIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
     </Box>
   )
