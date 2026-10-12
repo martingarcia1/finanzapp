@@ -26,9 +26,9 @@ import type { SavingsGoal, SavingsGoalFormData } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
-}
+import CurrencyToggle from '@/components/CurrencyToggle'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { formatMoney } from '@/lib/money'
 
 const EMPTY_FORM: SavingsGoalFormData = {
   name: '',
@@ -36,6 +36,7 @@ const EMPTY_FORM: SavingsGoalFormData = {
   currentAmount: 0,
   deadline: '',
   description: '',
+  currency: 'ARS',
 }
 
 interface GoalDialogProps {
@@ -85,23 +86,28 @@ function GoalDialog({ open, onClose, onSave }: GoalDialogProps) {
           helperText={errors.name}
           placeholder="Ej: Viaje a Europa, Auto, Fondo de emergencia"
         />
-        <TextField
-          label="Monto objetivo"
-          type="number"
-          fullWidth
-          value={form.targetAmount || ''}
-          onChange={(e) => set('targetAmount', parseFloat(e.target.value) || 0)}
-          error={!!errors.targetAmount}
-          helperText={errors.targetAmount}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
-        />
+        <div className="flex gap-3 items-start">
+          <TextField
+            label="Monto objetivo"
+            type="number"
+            fullWidth
+            value={form.targetAmount || ''}
+            onChange={(e) => set('targetAmount', parseFloat(e.target.value) || 0)}
+            error={!!errors.targetAmount}
+            helperText={errors.targetAmount}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start">{form.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
+          />
+          <div className="pt-2">
+            <CurrencyToggle value={form.currency ?? 'ARS'} onChange={(c) => set('currency', c)} />
+          </div>
+        </div>
         <TextField
           label="Ahorro inicial (opcional)"
           type="number"
           fullWidth
           value={form.currentAmount || ''}
           onChange={(e) => set('currentAmount', parseFloat(e.target.value) || 0)}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start">{form.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
         />
         <TextField
           label="Fecha límite (opcional)"
@@ -157,7 +163,7 @@ function AddFundsDialog({ goal, onClose, onSave }: AddFundsDialogProps) {
         {goal && (
           <div className="space-y-3 pt-2">
             <Typography variant="body2" color="text.secondary">
-              Meta: <strong>{goal.name}</strong> · Falta {formatCurrency(remaining)}
+              Meta: <strong>{goal.name}</strong> · Falta {formatMoney(remaining, goal.currency)}
             </Typography>
             <TextField
               label="Monto a agregar"
@@ -167,7 +173,7 @@ function AddFundsDialog({ goal, onClose, onSave }: AddFundsDialogProps) {
               onChange={(e) => { setAmount(e.target.value); setError('') }}
               error={!!error}
               helperText={error}
-              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">{goal.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
             />
           </div>
         )}
@@ -185,6 +191,7 @@ export default function Savings() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [fundingGoal, setFundingGoal] = useState<SavingsGoal | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
+  const { toARS } = useExchangeRates()
 
   const load = useCallback(() => setGoals(savingsService.getAll()), [])
 
@@ -194,8 +201,9 @@ export default function Savings() {
   const completed = goals.filter((g) => g.isCompleted)
   const displayed = showCompleted ? goals : active
 
-  const totalSaved = active.reduce((s, g) => s + g.currentAmount, 0)
-  const totalTarget = active.reduce((s, g) => s + g.targetAmount, 0)
+  // Totales en ARS: las metas en USD se valúan a la cotización elegida
+  const totalSaved = active.reduce((s, g) => s + toARS(g.currentAmount, g.currency), 0)
+  const totalTarget = active.reduce((s, g) => s + toARS(g.targetAmount, g.currency), 0)
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -220,7 +228,7 @@ export default function Savings() {
                 <div className="flex justify-between">
                   <Typography variant="body2" color="text.secondary">Progreso total</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {formatCurrency(totalSaved)} / {formatCurrency(totalTarget)}
+                    {formatMoney(totalSaved)} / {formatMoney(totalTarget)}
                   </Typography>
                 </div>
                 <LinearProgress
@@ -293,10 +301,10 @@ export default function Savings() {
 
                   <div className="mb-1 flex justify-between">
                     <Typography variant="body2" sx={{ fontWeight: 600, color: '#1976d2' }}>
-                      {formatCurrency(goal.currentAmount)}
+                      {formatMoney(goal.currentAmount, goal.currency)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      de {formatCurrency(goal.targetAmount)}
+                      de {formatMoney(goal.targetAmount, goal.currency)}
                     </Typography>
                   </div>
                   <LinearProgress
@@ -307,7 +315,7 @@ export default function Savings() {
                   />
                   <div className="flex justify-between items-center mt-2">
                     <Typography variant="caption" color="text.secondary">
-                      {progress.toFixed(0)}% · {goal.isCompleted ? '¡Completada!' : `Falta ${formatCurrency(remaining)}`}
+                      {progress.toFixed(0)}% · {goal.isCompleted ? '¡Completada!' : `Falta ${formatMoney(remaining, goal.currency)}`}
                     </Typography>
                     {!goal.isCompleted && (
                       <Button

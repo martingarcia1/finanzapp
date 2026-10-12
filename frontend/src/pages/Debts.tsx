@@ -28,9 +28,9 @@ import type { Debt, DebtFormData } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
-}
+import CurrencyToggle from '@/components/CurrencyToggle'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { formatMoney } from '@/lib/money'
 
 const EMPTY_FORM: DebtFormData = {
   direction: 'i_owe',
@@ -38,6 +38,7 @@ const EMPTY_FORM: DebtFormData = {
   amount: 0,
   description: '',
   dueDate: '',
+  currency: 'ARS',
 }
 
 interface DebtDialogProps {
@@ -96,16 +97,21 @@ function DebtDialog({ open, onClose, onSave }: DebtDialogProps) {
           error={!!errors.personName}
           helperText={errors.personName}
         />
-        <TextField
-          label="Monto"
-          type="number"
-          fullWidth
-          value={form.amount || ''}
-          onChange={(e) => set('amount', parseFloat(e.target.value) || 0)}
-          error={!!errors.amount}
-          helperText={errors.amount}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
-        />
+        <div className="flex gap-3 items-start">
+          <TextField
+            label="Monto"
+            type="number"
+            fullWidth
+            value={form.amount || ''}
+            onChange={(e) => set('amount', parseFloat(e.target.value) || 0)}
+            error={!!errors.amount}
+            helperText={errors.amount}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start">{form.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
+          />
+          <div className="pt-2">
+            <CurrencyToggle value={form.currency ?? 'ARS'} onChange={(c) => set('currency', c)} />
+          </div>
+        </div>
         <TextField
           label="Descripción (opcional)"
           fullWidth
@@ -157,7 +163,7 @@ function PartialPaymentDialog({ debt, onClose, onSave }: PartialPaymentDialogPro
         {debt && (
           <div className="space-y-3 pt-2">
             <Typography variant="body2" color="text.secondary">
-              Deuda con <strong>{debt.personName}</strong>: {formatCurrency(debt.amount)} pendiente
+              Deuda con <strong>{debt.personName}</strong>: {formatMoney(debt.amount, debt.currency)} pendiente
             </Typography>
             <TextField
               label="Monto a pagar"
@@ -167,7 +173,7 @@ function PartialPaymentDialog({ debt, onClose, onSave }: PartialPaymentDialogPro
               onChange={(e) => { setAmount(e.target.value); setError('') }}
               error={!!error}
               helperText={error}
-              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">{debt.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
             />
           </div>
         )}
@@ -185,6 +191,7 @@ export default function Debts() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [payingDebt, setPayingDebt] = useState<Debt | null>(null)
   const [showPaid, setShowPaid] = useState(false)
+  const { toARS } = useExchangeRates()
 
   const load = useCallback(() => setDebts(debtService.getAll()), [])
 
@@ -192,8 +199,8 @@ export default function Debts() {
 
   const active = debts.filter((d) => !d.isPaid)
   const paid = debts.filter((d) => d.isPaid)
-  const totalIOwe = active.filter((d) => d.direction === 'i_owe').reduce((s, d) => s + d.amount, 0)
-  const totalOwedToMe = active.filter((d) => d.direction === 'owed_to_me').reduce((s, d) => s + d.amount, 0)
+  const totalIOwe = active.filter((d) => d.direction === 'i_owe').reduce((s, d) => s + toARS(d.amount, d.currency), 0)
+  const totalOwedToMe = active.filter((d) => d.direction === 'owed_to_me').reduce((s, d) => s + toARS(d.amount, d.currency), 0)
 
   const displayed = showPaid ? debts : active
 
@@ -217,7 +224,7 @@ export default function Debts() {
             </Avatar>
             <div>
               <Typography variant="body2" color="text.secondary">Yo debo</Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#c62828' }}>{formatCurrency(totalIOwe)}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#c62828' }}>{formatMoney(totalIOwe)}</Typography>
             </div>
           </CardContent>
         </Card>
@@ -228,7 +235,7 @@ export default function Debts() {
             </Avatar>
             <div>
               <Typography variant="body2" color="text.secondary">Me deben</Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#2e7d32' }}>{formatCurrency(totalOwedToMe)}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#2e7d32' }}>{formatMoney(totalOwedToMe)}</Typography>
             </div>
           </CardContent>
         </Card>
@@ -277,14 +284,14 @@ export default function Debts() {
                         <div className="mt-1">
                           <LinearProgress variant="determinate" value={progress} sx={{ height: 4, borderRadius: 2 }} color="success" />
                           <Typography variant="caption" color="text.secondary">
-                            Pagado {formatCurrency(debt.originalAmount - debt.amount)} de {formatCurrency(debt.originalAmount)}
+                            Pagado {formatMoney(debt.originalAmount - debt.amount, debt.currency)} de {formatMoney(debt.originalAmount, debt.currency)}
                           </Typography>
                         </div>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <Typography variant="body1" sx={{ fontWeight: 700, color: iOwe ? '#c62828' : '#2e7d32' }}>
-                        {formatCurrency(debt.amount)}
+                        {formatMoney(debt.amount, debt.currency)}
                       </Typography>
                       {!debt.isPaid && (
                         <div className="flex gap-1">

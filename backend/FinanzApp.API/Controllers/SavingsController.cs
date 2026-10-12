@@ -18,7 +18,7 @@ public class SavingsController(AppDbContext db) : ControllerBase
 
     private static SavingsGoalDto ToDto(SavingsGoal s) =>
         new(s.Id, s.UserId, s.Name, s.TargetAmount, s.CurrentAmount,
-            s.Deadline, s.Description, s.IsCompleted, s.CompletedAt, s.CreatedAt);
+            s.Deadline, s.Description, s.IsCompleted, s.CompletedAt, s.CreatedAt, s.Currency);
 
     [HttpGet]
     public async Task<ActionResult<List<SavingsGoalDto>>> GetAll()
@@ -35,6 +35,8 @@ public class SavingsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<SavingsGoalDto>> Create(SavingsGoalCreateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
 
         var entity = new SavingsGoal
         {
@@ -42,6 +44,7 @@ public class SavingsController(AppDbContext db) : ControllerBase
             UserId = userId,
             Name = dto.Name,
             TargetAmount = dto.TargetAmount,
+            Currency = currency,
             CurrentAmount = 0,
             Deadline = dto.Deadline,
             Description = dto.Description,
@@ -58,6 +61,8 @@ public class SavingsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<SavingsGoalDto>> Update(Guid id, SavingsGoalUpdateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
         var entity = await db.SavingsGoals.FirstOrDefaultAsync(s => s.Id == id);
 
         if (entity is null) return NotFound();
@@ -66,6 +71,7 @@ public class SavingsController(AppDbContext db) : ControllerBase
         entity.Name = dto.Name;
         entity.TargetAmount = dto.TargetAmount;
         entity.CurrentAmount = dto.CurrentAmount;
+        entity.Currency = currency;
         entity.Deadline = dto.Deadline;
         entity.Description = dto.Description;
 

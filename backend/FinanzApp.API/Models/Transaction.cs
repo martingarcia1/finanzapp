@@ -6,6 +6,9 @@ public class Transaction
     public Guid UserId { get; set; }
     public string Type { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public string Currency { get; set; } = "ARS";
+    // Cotización ARS por USD al momento de registrar (solo si Currency = USD)
+    public decimal? ExchangeRate { get; set; }
     public string Category { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public DateOnly Date { get; set; }

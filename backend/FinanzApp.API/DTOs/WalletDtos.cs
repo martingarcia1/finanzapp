@@ -8,22 +8,26 @@ public record WalletDto(
     decimal Balance,
     string Color,
     string Description,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Currency);
 
 public record WalletCreateDto(
     string Name,
     string Type,
     decimal Balance,
     string Color,
-    string Description);
+    string Description,
+    string Currency = "ARS");
 
 public record WalletUpdateDto(
     string Name,
     string Type,
     decimal Balance,
     string Color,
-    string Description);
+    string Description,
+    string Currency = "ARS");
 
 public record WalletAdjustDto(decimal Delta);
 
-public record WalletTransferDto(Guid FromWalletId, Guid ToWalletId, decimal Amount);
+// ToAmount: monto acreditado en destino cuando las monedas difieren (compra/venta de dólares)
+public record WalletTransferDto(Guid FromWalletId, Guid ToWalletId, decimal Amount, decimal? ToAmount = null);

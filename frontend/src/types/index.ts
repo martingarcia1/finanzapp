@@ -5,6 +5,7 @@ export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'transfer' | 'personal
 export type RecurrencePattern = 'weekly' | 'monthly'
 export type DebtDirection = 'owed_to_me' | 'i_owe'
 export type WalletType = 'cash' | 'bank' | 'mercado_pago' | 'personal_pay' | 'crypto' | 'other'
+export type Currency = 'ARS' | 'USD'
 
 // ─── Entities ────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ export interface Transaction {
   description: string
   date: string           // ISO date string
   paymentMethod: PaymentMethod
+  currency?: Currency     // sin definir = ARS (datos previos a multi-moneda)
+  exchangeRate?: number  // ARS por USD al registrar (solo si currency = USD)
   createdAt: string
 }
 
@@ -42,6 +45,7 @@ export interface Debt {
   personName: string
   amount: number
   originalAmount: number
+  currency?: Currency
   description: string
   dueDate?: string
   isPaid: boolean
@@ -54,6 +58,7 @@ export interface SavingsGoal {
   name: string
   targetAmount: number
   currentAmount: number
+  currency?: Currency
   deadline?: string
   description: string
   isCompleted: boolean
@@ -67,6 +72,7 @@ export interface Wallet {
   type: WalletType
   balance: number
   color: string
+  currency?: Currency
   description: string
   createdAt: string
 }
@@ -153,4 +159,9 @@ export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'transfer', label: 'Transferencia' },
   { value: 'personal_pay', label: 'Personal Pay' },
   { value: 'mercado_pago', label: 'Mercado Pago' },
+]
+
+export const CURRENCIES: { value: Currency; label: string; symbol: string }[] = [
+  { value: 'ARS', label: 'Pesos', symbol: '$' },
+  { value: 'USD', label: 'Dólares', symbol: 'US$' },
 ]

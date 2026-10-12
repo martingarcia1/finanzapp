@@ -7,6 +7,7 @@ public class Wallet
     public string Name { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
     public decimal Balance { get; set; }
+    public string Currency { get; set; } = "ARS";
     public string Color { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

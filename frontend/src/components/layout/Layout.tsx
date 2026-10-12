@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { DOLLAR_RATE_LABELS } from '@/services/exchangeRates'
+import { formatRate } from '@/lib/money'
 import {
   Box,
   Drawer,
@@ -57,6 +60,7 @@ export default function Layout({ children }: Props) {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const { user, logout } = useAuth()
+  const { rate } = useExchangeRates()
 
   const drawerContent = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -68,6 +72,21 @@ export default function Layout({ children }: Props) {
           FinanzApp
         </Typography>
       </Box>
+      {rate && (
+        <Tooltip title="Cotización de referencia (cambiala en Ajustes)" placement="right">
+          <Box
+            onClick={() => { navigate('/settings'); if (isMobile) setMobileOpen(false) }}
+            sx={{ mx: 2, mb: 1.5, px: 1.5, py: 0.75, borderRadius: 2, bgcolor: '#e0f2f1', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 600, color: '#00695c' }}>
+              Dólar {DOLLAR_RATE_LABELS[rate.code]}
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 800, color: '#00695c' }}>
+              {formatRate(rate.sell)}
+            </Typography>
+          </Box>
+        </Tooltip>
+      )}
       <Divider />
 
       <List sx={{ flex: 1, pt: 1 }}>

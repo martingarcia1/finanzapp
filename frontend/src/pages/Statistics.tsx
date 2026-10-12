@@ -13,12 +13,11 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import { transactionService } from '@/services/storage'
+import type { Transaction } from '@/types'
 import { format, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
-}
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { formatMoney, transactionARS } from '@/lib/money'
 
 const MONTHS_OPTIONS = Array.from({ length: 12 }, (_, i) => {
   const d = subMonths(new Date(), i)
@@ -41,11 +40,14 @@ export default function Statistics() {
   const [selected, setSelected] = useState(MONTHS_OPTIONS[0].value)
 
   const option = MONTHS_OPTIONS.find((o) => o.value === selected)!
+  const { rate } = useExchangeRates()
 
   const { income, expenses, balance, topExpenseCategories, topIncomeCategories, last6Months } = useMemo(() => {
+    // Todo se expresa en ARS; los USD usan la cotización guardada al registrarlos
+    const ars = (t: Transaction) => transactionARS(t, rate?.sell ?? null)
     const txs = transactionService.getByMonth(option.year, option.month)
-    const income = txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const expenses = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+    const income = txs.filter((t) => t.type === 'income').reduce((s, t) => s + ars(t), 0)
+    const expenses = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + ars(t), 0)
     const balance = income - expenses
 
     const expenseMap: Record<string, { amount: number; count: number }> = {}
@@ -54,7 +56,7 @@ export default function Statistics() {
     txs.forEach((t) => {
       const map = t.type === 'expense' ? expenseMap : incomeMap
       if (!map[t.category]) map[t.category] = { amount: 0, count: 0 }
-      map[t.category].amount += t.amount
+      map[t.category].amount += ars(t)
       map[t.category].count++
     })
 
@@ -74,13 +76,13 @@ export default function Statistics() {
       const monthTxs = transactionService.getByMonth(d.getFullYear(), d.getMonth())
       return {
         label: format(d, 'MMM', { locale: es }),
-        income: monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0),
-        expense: monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+        income: monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + ars(t), 0),
+        expense: monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + ars(t), 0),
       }
     })
 
     return { income, expenses, balance, topExpenseCategories, topIncomeCategories, last6Months }
-  }, [option])
+  }, [option, rate])
 
   const maxBar = Math.max(...last6Months.map((m) => Math.max(m.income, m.expense)), 1)
 
@@ -112,7 +114,7 @@ export default function Statistics() {
             <Avatar sx={{ bgcolor: '#e8f5e9' }}><TrendingUpIcon color="success" /></Avatar>
             <div>
               <Typography variant="caption" color="text.secondary">Ingresos</Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#2e7d32' }}>{formatCurrency(income)}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#2e7d32' }}>{formatMoney(income)}</Typography>
             </div>
           </CardContent>
         </Card>
@@ -121,7 +123,7 @@ export default function Statistics() {
             <Avatar sx={{ bgcolor: '#fce4ec' }}><TrendingDownIcon color="error" /></Avatar>
             <div>
               <Typography variant="caption" color="text.secondary">Egresos</Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#c62828' }}>{formatCurrency(expenses)}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#c62828' }}>{formatMoney(expenses)}</Typography>
             </div>
           </CardContent>
         </Card>
@@ -133,7 +135,7 @@ export default function Statistics() {
             <div>
               <Typography variant="caption" color="text.secondary">Balance</Typography>
               <Typography variant="h6" sx={{ fontWeight: 700, color: balance >= 0 ? '#1976d2' : '#c62828' }}>
-                {formatCurrency(balance)}
+                {formatMoney(balance)}
               </Typography>
             </div>
           </CardContent>
@@ -156,7 +158,7 @@ export default function Statistics() {
                         <Chip label={cat.count} size="small" variant="outlined" sx={{ fontSize: 10, height: 16 }} />
                       </div>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: '#c62828' }}>
-                        {formatCurrency(cat.amount)} ({cat.percentage.toFixed(0)}%)
+                        {formatMoney(cat.amount)} ({cat.percentage.toFixed(0)}%)
                       </Typography>
                     </div>
                     <LinearProgress variant="determinate" value={cat.percentage} color="error" sx={{ height: 6, borderRadius: 3 }} />
@@ -182,7 +184,7 @@ export default function Statistics() {
                         <Chip label={cat.count} size="small" variant="outlined" sx={{ fontSize: 10, height: 16 }} />
                       </div>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: '#2e7d32' }}>
-                        {formatCurrency(cat.amount)} ({cat.percentage.toFixed(0)}%)
+                        {formatMoney(cat.amount)} ({cat.percentage.toFixed(0)}%)
                       </Typography>
                     </div>
                     <LinearProgress variant="determinate" value={cat.percentage} color="success" sx={{ height: 6, borderRadius: 3 }} />
@@ -204,12 +206,12 @@ export default function Statistics() {
                   <div
                     className="flex-1 bg-green-400 rounded-t transition-all"
                     style={{ height: `${maxBar > 0 ? (m.income / maxBar) * 100 : 0}%` }}
-                    title={`Ingresos: ${formatCurrency(m.income)}`}
+                    title={`Ingresos: ${formatMoney(m.income)}`}
                   />
                   <div
                     className="flex-1 bg-red-400 rounded-t transition-all"
                     style={{ height: `${maxBar > 0 ? (m.expense / maxBar) * 100 : 0}%` }}
-                    title={`Egresos: ${formatCurrency(m.expense)}`}
+                    title={`Egresos: ${formatMoney(m.expense)}`}
                   />
                 </div>
                 <Typography variant="caption" color="text.secondary" className="capitalize">{m.label}</Typography>

@@ -17,6 +17,7 @@ import {
   ListItemSecondaryAction,
   IconButton,
   CircularProgress,
+  MenuItem,
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PersonIcon from '@mui/icons-material/Person'
@@ -26,6 +27,7 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import FingerprintIcon from '@mui/icons-material/Fingerprint'
 import DeleteIcon from '@mui/icons-material/Delete'
+import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange'
 import {
   transactionService,
   recurringService,
@@ -36,6 +38,9 @@ import {
   settingsService,
 } from '@/services/storage'
 import api from '@/services/api'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { DOLLAR_RATE_LABELS, type DollarRateCode } from '@/services/exchangeRates'
+import { formatRate } from '@/lib/money'
 import { registerBiometric, isWebAuthnSupported } from '@/services/webauthn'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,6 +101,7 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  const { rates, rateType, setRateType } = useExchangeRates()
   const [userName, setUserName] = useState('')
   const [nameSaved, setNameSaved] = useState(false)
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -266,6 +272,31 @@ export default function Settings() {
         </div>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           Se muestra en el saludo del Dashboard.
+        </Typography>
+      </Section>
+
+      {/* ── Moneda ── */}
+      <Section title="Dólar de referencia" icon={<CurrencyExchangeIcon sx={{ color: '#00796b' }} />}>
+        <TextField
+          select
+          label="Cotización para convertir USD a pesos"
+          fullWidth
+          size="small"
+          value={rateType}
+          onChange={(e) => setRateType(e.target.value as DollarRateCode)}
+        >
+          {(Object.keys(DOLLAR_RATE_LABELS) as DollarRateCode[]).map((code) => {
+            const r = rates.find((x) => x.code === code)
+            return (
+              <MenuItem key={code} value={code}>
+                Dólar {DOLLAR_RATE_LABELS[code]}{r ? ` — venta ${formatRate(r.sell)}` : ''}
+              </MenuItem>
+            )
+          })}
+        </TextField>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          Se usa para valuar billeteras, metas y deudas en dólares y para proponer la cotización
+          al cargar una transacción en USD. Las transacciones guardan la cotización del día en que se cargaron.
         </Typography>
       </Section>
 

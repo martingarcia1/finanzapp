@@ -9,7 +9,9 @@ public record TransactionDto(
     string Description,
     DateOnly Date,
     string PaymentMethod,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Currency,
+    decimal? ExchangeRate);
 
 public record TransactionCreateDto(
     string Type,
@@ -17,7 +19,9 @@ public record TransactionCreateDto(
     string Category,
     string Description,
     DateOnly Date,
-    string PaymentMethod);
+    string PaymentMethod,
+    string Currency = "ARS",
+    decimal? ExchangeRate = null);
 
 public record TransactionUpdateDto(
     string Type,
@@ -25,4 +29,6 @@ public record TransactionUpdateDto(
     string Category,
     string Description,
     DateOnly Date,
-    string PaymentMethod);
+    string PaymentMethod,
+    string Currency = "ARS",
+    decimal? ExchangeRate = null);

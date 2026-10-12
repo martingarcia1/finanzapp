@@ -18,7 +18,7 @@ public class WalletsController(AppDbContext db) : ControllerBase
 
     private static WalletDto ToDto(Wallet w) =>
         new(w.Id, w.UserId, w.Name, w.Type, w.Balance,
-            w.Color, w.Description, w.CreatedAt);
+            w.Color, w.Description, w.CreatedAt, w.Currency);
 
     [HttpGet]
     public async Task<ActionResult<List<WalletDto>>> GetAll()
@@ -35,6 +35,8 @@ public class WalletsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<WalletDto>> Create(WalletCreateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
 
         var entity = new Wallet
         {
@@ -43,6 +45,7 @@ public class WalletsController(AppDbContext db) : ControllerBase
             Name = dto.Name,
             Type = dto.Type,
             Balance = dto.Balance,
+            Currency = currency,
             Color = dto.Color,
             Description = dto.Description,
             CreatedAt = DateTime.UtcNow,
@@ -57,6 +60,8 @@ public class WalletsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<WalletDto>> Update(Guid id, WalletUpdateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
         var entity = await db.Wallets.FirstOrDefaultAsync(w => w.Id == id);
 
         if (entity is null) return NotFound();
@@ -65,6 +70,7 @@ public class WalletsController(AppDbContext db) : ControllerBase
         entity.Name = dto.Name;
         entity.Type = dto.Type;
         entity.Balance = dto.Balance;
+        entity.Currency = currency;
         entity.Color = dto.Color;
         entity.Description = dto.Description;
 
@@ -121,8 +127,18 @@ public class WalletsController(AppDbContext db) : ControllerBase
         if (from.Balance < dto.Amount)
             return BadRequest(new { message = "Fondos insuficientes en el wallet origen." });
 
+        // Misma moneda: se acredita el mismo monto. Distinta moneda (compra/venta de USD):
+        // el cliente indica cuánto se acredita en destino según la cotización usada.
+        decimal credited;
+        if (from.Currency == to.Currency)
+            credited = dto.Amount;
+        else if (dto.ToAmount is > 0)
+            credited = dto.ToAmount.Value;
+        else
+            return BadRequest(new { message = "Indicá el monto a acreditar al transferir entre monedas distintas." });
+
         from.Balance -= dto.Amount;
-        to.Balance += dto.Amount;
+        to.Balance += credited;
 
         await db.SaveChangesAsync();
 

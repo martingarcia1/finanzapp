@@ -30,14 +30,10 @@ import WalletIcon from '@mui/icons-material/Wallet'
 import { walletService } from '@/services/storage'
 import type { Wallet, WalletFormData, WalletType } from '@/types'
 import { WALLET_TYPES, WALLET_COLORS } from '@/types'
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
+import CurrencyToggle from '@/components/CurrencyToggle'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { DOLLAR_RATE_LABELS } from '@/services/exchangeRates'
+import { formatMoney, formatRate } from '@/lib/money'
 
 const WALLET_ICON: Record<WalletType, React.ReactNode> = {
   cash:         <MoneyIcon />,
@@ -56,6 +52,7 @@ const EMPTY_FORM: WalletFormData = {
   balance: 0,
   color: WALLET_COLORS[0],
   description: '',
+  currency: 'ARS',
 }
 
 interface WalletDialogProps {
@@ -128,16 +125,21 @@ function WalletDialog({ open, initial, onClose, onSave }: WalletDialogProps) {
           ))}
         </TextField>
 
-        <TextField
-          label="Saldo inicial"
-          type="number"
-          fullWidth
-          value={form.balance || ''}
-          onChange={(e) => set('balance', parseFloat(e.target.value) || 0)}
-          error={!!errors.balance}
-          helperText={errors.balance}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
-        />
+        <div className="flex gap-3 items-start">
+          <TextField
+            label="Saldo inicial"
+            type="number"
+            fullWidth
+            value={form.balance || ''}
+            onChange={(e) => set('balance', parseFloat(e.target.value) || 0)}
+            error={!!errors.balance}
+            helperText={errors.balance}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start">{form.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
+          />
+          <div className="pt-2">
+            <CurrencyToggle value={form.currency ?? 'ARS'} onChange={(c) => set('currency', c)} />
+          </div>
+        </div>
 
         <div>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
@@ -234,7 +236,7 @@ function AdjustDialog({ wallet, onClose, onSave }: AdjustDialogProps) {
 
         {wallet && (
           <Typography variant="caption" color="text.secondary">
-            Saldo actual: <strong>{formatCurrency(wallet.balance)}</strong>
+            Saldo actual: <strong>{formatMoney(wallet.balance, wallet.currency)}</strong>
           </Typography>
         )}
 
@@ -246,7 +248,7 @@ function AdjustDialog({ wallet, onClose, onSave }: AdjustDialogProps) {
           onChange={(e) => { setAmount(e.target.value); setError('') }}
           error={!!error}
           helperText={error}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start">{wallet?.currency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
         />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -283,21 +285,42 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
     }
   }, [open, wallets])
 
+  const { rate, rateType } = useExchangeRates()
+  const [rateInput, setRateInput] = useState('')
+
   const fromWallet = wallets.find((w) => w.id === fromId)
+  const toWallet = wallets.find((w) => w.id === toId)
+  const fromCurrency = fromWallet?.currency ?? 'ARS'
+  const toCurrency = toWallet?.currency ?? 'ARS'
+  const crossCurrency = !!fromWallet && !!toWallet && fromCurrency !== toCurrency
+  const buyingUSD = crossCurrency && toCurrency === 'USD'
+
+  // Comprar USD se paga al precio de venta; vender USD se cobra al de compra
+  useEffect(() => {
+    if (!crossCurrency || !rate) return
+    const suggested = buyingUSD ? rate.sell : (rate.buy ?? rate.sell)
+    setRateInput(String(suggested))
+  }, [crossCurrency, buyingUSD, rate])
+
+  const val = parseFloat(amount)
+  const fx = parseFloat(rateInput)
+  const credited = crossCurrency && val > 0 && fx > 0
+    ? Math.round((buyingUSD ? val / fx : val * fx) * 100) / 100
+    : val
 
   const validate = () => {
     const errs: Record<string, string> = {}
-    const val = parseFloat(amount)
     if (!val || val <= 0) errs.amount = 'Ingresá un monto válido'
     if (fromId === toId) errs.to = 'Elegí una billetera distinta'
     if (fromWallet && val > fromWallet.balance) errs.amount = 'Saldo insuficiente'
+    if (crossCurrency && !(fx > 0)) errs.rate = 'Ingresá la cotización'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
 
   const handleSubmit = () => {
     if (!validate()) return
-    const success = walletService.transfer(fromId, toId, parseFloat(amount))
+    const success = walletService.transfer(fromId, toId, val, crossCurrency ? credited : undefined)
     if (success) { onSave(); onClose() }
     else setErrors({ amount: 'Error al transferir. Verificá el saldo.' })
   }
@@ -315,7 +338,7 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
         >
           {wallets.map((w) => (
             <MenuItem key={w.id} value={w.id}>
-              {w.name} — {formatCurrency(w.balance)}
+              {w.name} — {formatMoney(w.balance, w.currency)}
             </MenuItem>
           ))}
         </TextField>
@@ -331,7 +354,7 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
         >
           {wallets.filter((w) => w.id !== fromId).map((w) => (
             <MenuItem key={w.id} value={w.id}>
-              {w.name} — {formatCurrency(w.balance)}
+              {w.name} — {formatMoney(w.balance, w.currency)}
             </MenuItem>
           ))}
         </TextField>
@@ -343,9 +366,34 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
           value={amount}
           onChange={(e) => { setAmount(e.target.value); setErrors({}) }}
           error={!!errors.amount}
-          helperText={errors.amount ?? (fromWallet ? `Disponible: ${formatCurrency(fromWallet.balance)}` : '')}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+          helperText={errors.amount ?? (fromWallet ? `Disponible: ${formatMoney(fromWallet.balance, fromCurrency)}` : '')}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start">{fromCurrency === 'USD' ? 'US$' : '$'}</InputAdornment> } }}
         />
+
+        {crossCurrency && (
+          <>
+            <TextField
+              label={`Cotización (${buyingUSD ? 'comprás' : 'vendés'} dólares)`}
+              type="number"
+              fullWidth
+              value={rateInput}
+              onChange={(e) => { setRateInput(e.target.value); setErrors({}) }}
+              error={!!errors.rate}
+              helperText={
+                errors.rate ??
+                (rate ? `Dólar ${DOLLAR_RATE_LABELS[rateType].toLowerCase()}: compra ${rate.buy ? formatRate(rate.buy) : '—'} · venta ${formatRate(rate.sell)}` : 'ARS por cada USD')
+              }
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+            />
+            {val > 0 && fx > 0 && (
+              <div className="rounded-lg bg-blue-50 px-3 py-2">
+                <Typography variant="body2">
+                  Se acreditan <strong>{formatMoney(credited, toCurrency)}</strong> en {toWallet?.name}
+                </Typography>
+              </div>
+            )}
+          </>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
@@ -369,7 +417,11 @@ export default function Wallets() {
   const load = useCallback(() => setWallets(walletService.getAll()), [])
   useEffect(() => { load() }, [load])
 
-  const total = wallets.reduce((s, w) => s + w.balance, 0)
+  const { toARS, rate, rateType } = useExchangeRates()
+  const totalARS = wallets.filter((w) => (w.currency ?? 'ARS') === 'ARS').reduce((s, w) => s + w.balance, 0)
+  const totalUSD = wallets.filter((w) => w.currency === 'USD').reduce((s, w) => s + w.balance, 0)
+  // Patrimonio total expresado en pesos, valuando los dólares a la cotización elegida
+  const total = totalARS + toARS(totalUSD, 'USD')
 
   const handleSave = (data: WalletFormData) => {
     if (editing) walletService.update(editing.id, data)
@@ -401,7 +453,7 @@ export default function Wallets() {
         <div>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>Billeteras</Typography>
           <Typography variant="body2" color="text.secondary">
-            {wallets.length} billetera{wallets.length !== 1 ? 's' : ''} · Total {formatCurrency(total)}
+            {wallets.length} billetera{wallets.length !== 1 ? 's' : ''} · Total {formatMoney(total)}
           </Typography>
         </div>
         <div className="flex gap-2">
@@ -434,14 +486,22 @@ export default function Wallets() {
             Saldo total
           </Typography>
           <Typography variant="h3" sx={{ fontWeight: 800, letterSpacing: -1 }}>
-            {formatCurrency(total)}
+            {formatMoney(total)}
           </Typography>
+          {totalUSD > 0 && (
+            <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
+              {formatMoney(totalARS)} + {formatMoney(totalUSD, 'USD')}
+              {rate
+                ? ` · dólares al ${DOLLAR_RATE_LABELS[rateType].toLowerCase()} (${formatRate(rate.sell)})`
+                : ' · sin cotización disponible'}
+            </Typography>
+          )}
           <div className="flex gap-4 mt-3 flex-wrap">
             {wallets.map((w) => (
               <div key={w.id} className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: w.color }} />
                 <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                  {w.name}: {formatCurrency(w.balance)}
+                  {w.name}: {formatMoney(w.balance, w.currency)}
                 </Typography>
               </div>
             ))}
@@ -520,7 +580,7 @@ export default function Wallets() {
                     variant="h5"
                     sx={{ fontWeight: 800, color: wallet.balance > 0 ? '#1a1a1a' : '#9e9e9e', mb: 2 }}
                   >
-                    {formatCurrency(wallet.balance)}
+                    {formatMoney(wallet.balance, wallet.currency)}
                   </Typography>
 
                   <Button

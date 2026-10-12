@@ -37,7 +37,8 @@ public class TransactionsController(AppDbContext db) : ControllerBase
             .Select(t => new TransactionDto(
                 t.Id, t.UserId, t.Type, t.Amount,
                 t.Category, t.Description, t.Date,
-                t.PaymentMethod, t.CreatedAt))
+                t.PaymentMethod, t.CreatedAt,
+                t.Currency, t.ExchangeRate))
             .ToListAsync();
 
         return Ok(result);
@@ -47,6 +48,8 @@ public class TransactionsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<TransactionDto>> Create(TransactionCreateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
 
         var transaction = new Transaction
         {
@@ -58,6 +61,8 @@ public class TransactionsController(AppDbContext db) : ControllerBase
             Description = dto.Description,
             Date = dto.Date,
             PaymentMethod = dto.PaymentMethod,
+            Currency = currency,
+            ExchangeRate = currency == Currencies.USD ? dto.ExchangeRate : null,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -68,13 +73,16 @@ public class TransactionsController(AppDbContext db) : ControllerBase
             new TransactionDto(
                 transaction.Id, transaction.UserId, transaction.Type,
                 transaction.Amount, transaction.Category, transaction.Description,
-                transaction.Date, transaction.PaymentMethod, transaction.CreatedAt));
+                transaction.Date, transaction.PaymentMethod, transaction.CreatedAt,
+                transaction.Currency, transaction.ExchangeRate));
     }
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<TransactionDto>> Update(Guid id, TransactionUpdateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
 
         var transaction = await db.Transactions
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -88,13 +96,16 @@ public class TransactionsController(AppDbContext db) : ControllerBase
         transaction.Description = dto.Description;
         transaction.Date = dto.Date;
         transaction.PaymentMethod = dto.PaymentMethod;
+        transaction.Currency = currency;
+        transaction.ExchangeRate = currency == Currencies.USD ? dto.ExchangeRate : null;
 
         await db.SaveChangesAsync();
 
         return Ok(new TransactionDto(
             transaction.Id, transaction.UserId, transaction.Type,
             transaction.Amount, transaction.Category, transaction.Description,
-            transaction.Date, transaction.PaymentMethod, transaction.CreatedAt));
+            transaction.Date, transaction.PaymentMethod, transaction.CreatedAt,
+                transaction.Currency, transaction.ExchangeRate));
     }
 
     [HttpDelete("{id:guid}")]

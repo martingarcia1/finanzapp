@@ -35,14 +35,9 @@ import {
 } from '@/services/storage'
 import type { Transaction, Wallet, RecurringTransaction } from '@/types'
 import { WALLET_TYPES } from '@/types'
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
+import ExchangeRatesCard from '@/components/ExchangeRatesCard'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { formatMoney, transactionARS } from '@/lib/money'
 
 function greet(): string {
   const h = new Date().getHours()
@@ -113,7 +108,7 @@ function TxRow({ tx }: { tx: Transaction }) {
         variant="body2"
         sx={{ fontWeight: 700, color: isIncome ? '#2e7d32' : '#c62828', flexShrink: 0 }}
       >
-        {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
+        {isIncome ? '+' : '-'}{formatMoney(tx.amount, tx.currency)}
       </Typography>
     </div>
   )
@@ -160,10 +155,14 @@ export default function Dashboard() {
   const year = now.getFullYear()
   const month = now.getMonth()
 
+  const { rate, toARS } = useExchangeRates()
+
   const data = useMemo(() => {
+    // Totales en ARS: las transacciones en USD usan la cotización guardada al registrarlas
+    const currentRate = rate?.sell ?? null
     const monthTxs = transactionService.getByMonth(year, month)
-    const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const monthExpenses = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+    const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + transactionARS(t, currentRate), 0)
+    const monthExpenses = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + transactionARS(t, currentRate), 0)
 
     const recentTxs = transactionService.getAll().slice(0, 5)
 
@@ -177,7 +176,7 @@ export default function Dashboard() {
 
     const savings = savingsService.getAll().filter((s) => !s.isCompleted).slice(0, 4)
     const wallets = walletService.getAll()
-    const walletsTotal = wallets.reduce((s, w) => s + w.balance, 0)
+    const walletsTotal = wallets.reduce((s, w) => s + toARS(w.balance, w.currency), 0)
     const fixedTotal = fixedExpenseService.getTotalMonthly()
     const recurring = recurringService.getAll()
     const weekEvents = getWeekEvents(recurring)
@@ -188,7 +187,7 @@ export default function Dashboard() {
       recentTxs, upcomingDebts, savings,
       wallets, walletsTotal, fixedTotal, weekEvents,
     }
-  }, [year, month]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [year, month, rate, toARS]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { monthIncome, monthExpenses, monthBalance, recentTxs, upcomingDebts,
     savings, wallets, walletsTotal, fixedTotal, weekEvents } = data
@@ -210,7 +209,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <StatCard
           title="Ingresos del mes"
-          value={formatCurrency(monthIncome)}
+          value={formatMoney(monthIncome)}
           icon={<TrendingUpIcon />}
           iconBg="#e8f5e9"
           valueColor="#2e7d32"
@@ -218,7 +217,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Egresos del mes"
-          value={formatCurrency(monthExpenses)}
+          value={formatMoney(monthExpenses)}
           icon={<TrendingDownIcon />}
           iconBg="#fce4ec"
           valueColor="#c62828"
@@ -226,7 +225,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Balance del mes"
-          value={formatCurrency(monthBalance)}
+          value={formatMoney(monthBalance)}
           icon={<AccountBalanceWalletIcon />}
           iconBg={monthBalance >= 0 ? '#e3f2fd' : '#fce4ec'}
           valueColor={monthBalance >= 0 ? '#1565c0' : '#c62828'}
@@ -234,11 +233,13 @@ export default function Dashboard() {
         />
         <StatCard
           title="Saldo en billeteras"
-          value={formatCurrency(walletsTotal)}
+          value={formatMoney(walletsTotal)}
           icon={<WalletIcon />}
           iconBg="#f3e5f5"
           valueColor="#6a1b9a"
-          sub={`${wallets.length} billetera${wallets.length !== 1 ? 's' : ''}`}
+          sub={rate && walletsTotal > 0
+            ? `≈ ${formatMoney(walletsTotal / rate.sell, 'USD')}`
+            : `${wallets.length} billetera${wallets.length !== 1 ? 's' : ''}`}
         />
       </div>
 
@@ -299,7 +300,7 @@ export default function Dashboard() {
                             className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold
                               ${item.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
                           >
-                            {item.type === 'income' ? '↑' : '↓'} {item.label} · {formatCurrency(item.amount)}
+                            {item.type === 'income' ? '↑' : '↓'} {item.label} · {formatMoney(item.amount)}
                           </div>
                         ))}
                       </div>
@@ -313,6 +314,8 @@ export default function Dashboard() {
 
         {/* Columna derecha (1/3) */}
         <div className="space-y-4">
+
+          <ExchangeRatesCard />
 
           {/* Billeteras */}
           <Card>
@@ -343,7 +346,7 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <Typography variant="body2" sx={{ fontWeight: 700, flexShrink: 0 }}>
-                          {formatCurrency(w.balance)}
+                          {formatMoney(w.balance, w.currency)}
                         </Typography>
                       </div>
                     )
@@ -351,7 +354,7 @@ export default function Dashboard() {
                   <div className="border-t border-gray-100 pt-2 flex justify-between">
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>Total</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 800, color: '#6a1b9a' }}>
-                      {formatCurrency(walletsTotal)}
+                      {formatMoney(walletsTotal)}
                     </Typography>
                   </div>
                 </div>
@@ -371,7 +374,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <Typography variant="h5" sx={{ fontWeight: 800, color: '#c62828', mb: 0.5 }}>
-                {formatCurrency(fixedTotal)}
+                {formatMoney(fixedTotal)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Total mensual activo
@@ -421,7 +424,7 @@ export default function Dashboard() {
                         </Typography>
                       </div>
                       <Typography variant="body2" sx={{ fontWeight: 700, color: '#c62828', flexShrink: 0 }}>
-                        {formatCurrency(d.amount)}
+                        {formatMoney(d.amount, d.currency)}
                       </Typography>
                     </div>
                   ))}
@@ -463,7 +466,7 @@ export default function Dashboard() {
                           sx={{ height: 6, borderRadius: 3 }}
                         />
                         <Typography variant="caption" color="text.secondary">
-                          {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
+                          {formatMoney(goal.currentAmount, goal.currency)} / {formatMoney(goal.targetAmount, goal.currency)}
                         </Typography>
                       </div>
                     )

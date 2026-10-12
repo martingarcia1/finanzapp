@@ -49,6 +49,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(t => t.Id);
             e.Property(t => t.Id).ValueGeneratedOnAdd();
             e.Property(t => t.Amount).HasColumnType("numeric(18,2)");
+            e.Property(t => t.Currency).HasMaxLength(3).HasDefaultValue(Currencies.ARS);
+            e.Property(t => t.ExchangeRate).HasColumnType("numeric(18,4)");
             e.HasOne(t => t.User)
              .WithMany()
              .HasForeignKey(t => t.UserId)
@@ -75,6 +77,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(d => d.Id).ValueGeneratedOnAdd();
             e.Property(d => d.Amount).HasColumnType("numeric(18,2)");
             e.Property(d => d.OriginalAmount).HasColumnType("numeric(18,2)");
+            e.Property(d => d.Currency).HasMaxLength(3).HasDefaultValue(Currencies.ARS);
             e.HasOne(d => d.User)
              .WithMany()
              .HasForeignKey(d => d.UserId)
@@ -88,6 +91,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(s => s.Id).ValueGeneratedOnAdd();
             e.Property(s => s.TargetAmount).HasColumnType("numeric(18,2)");
             e.Property(s => s.CurrentAmount).HasColumnType("numeric(18,2)");
+            e.Property(s => s.Currency).HasMaxLength(3).HasDefaultValue(Currencies.ARS);
             e.HasOne(s => s.User)
              .WithMany()
              .HasForeignKey(s => s.UserId)
@@ -112,6 +116,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(w => w.Id);
             e.Property(w => w.Id).ValueGeneratedOnAdd();
             e.Property(w => w.Balance).HasColumnType("numeric(18,2)");
+            e.Property(w => w.Currency).HasMaxLength(3).HasDefaultValue(Currencies.ARS);
             e.HasOne(w => w.User)
              .WithMany()
              .HasForeignKey(w => w.UserId)

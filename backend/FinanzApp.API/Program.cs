@@ -10,6 +10,18 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
+// ── Secrets (user-secrets en dev, variables de entorno en prod) ───────────────
+// Jwt__Key y ConnectionStrings__Default nunca van en appsettings.json.
+var jwtKey = config["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException(
+        "Falta 'Jwt:Key' (mínimo 32 bytes). Configúrala con `dotnet user-secrets set \"Jwt:Key\" <valor>` " +
+        "o con la variable de entorno Jwt__Key.");
+
+if (string.IsNullOrWhiteSpace(config.GetConnectionString("Default")))
+    throw new InvalidOperationException(
+        "Falta 'ConnectionStrings:Default'. Configúrala con user-secrets o con ConnectionStrings__Default.");
+
 // ── Database ──────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(config.GetConnectionString("Default")));
@@ -27,7 +39,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = config["Jwt:Issuer"],
             ValidAudience = config["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(config["Jwt:Key"]!)),
+                Encoding.UTF8.GetBytes(jwtKey)),
         };
     });
 
@@ -36,6 +48,11 @@ builder.Services.AddAuthorization();
 // ── Application Services ──────────────────────────────────────────────────────
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<ExchangeRateService>(c =>
+{
+    c.BaseAddress = new Uri(config["ExchangeRates:BaseUrl"] ?? "https://dolarapi.com/v1/");
+    c.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // ── Fido2 / WebAuthn ──────────────────────────────────────────────────────────
 builder.Services.AddFido2(options =>
@@ -100,6 +117,9 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    using (var scope = app.Services.CreateScope())
+        scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+
     app.UseSwagger();
     app.UseSwaggerUI();
 }

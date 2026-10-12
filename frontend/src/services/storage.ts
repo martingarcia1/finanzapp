@@ -12,6 +12,7 @@ import type {
   FixedExpenseFormData,
   WalletFormData,
 } from '@/types'
+import type { DollarRateCode } from './exchangeRates'
 
 const KEYS = {
   transactions: 'fa_transactions',
@@ -27,9 +28,11 @@ const KEYS = {
 
 export interface AppSettings {
   userName: string
+  // Cotización usada para convertir USD → ARS en totales y formularios
+  dollarRateType: DollarRateCode
 }
 
-const DEFAULT_SETTINGS: AppSettings = { userName: 'Usuario' }
+const DEFAULT_SETTINGS: AppSettings = { userName: 'Usuario', dollarRateType: 'blue' }
 
 export const settingsService = {
   get(): AppSettings {
@@ -315,19 +318,19 @@ export const walletService = {
     }
   },
 
-  transfer(fromId: string, toId: string, amount: number): boolean {
+  /** `toAmount`: lo que se acredita en destino si las monedas difieren (compra/venta de USD). */
+  transfer(fromId: string, toId: string, amount: number, toAmount?: number): boolean {
     const all = this.getAll()
     const fromIdx = all.findIndex((w) => w.id === fromId)
     const toIdx = all.findIndex((w) => w.id === toId)
     if (fromIdx === -1 || toIdx === -1 || amount <= 0) return false
     if (all[fromIdx].balance < amount) return false
+    const sameCurrency = (all[fromIdx].currency ?? 'ARS') === (all[toIdx].currency ?? 'ARS')
+    const credited = sameCurrency ? amount : toAmount
+    if (!credited || credited <= 0) return false
     all[fromIdx].balance -= amount
-    all[toIdx].balance += amount
+    all[toIdx].balance += credited
     saveAll(KEYS.wallets, all)
     return true
-  },
-
-  getTotal(): number {
-    return this.getAll().reduce((s, w) => s + w.balance, 0)
   },
 }

@@ -8,6 +8,7 @@ public class Debt
     public string PersonName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public decimal OriginalAmount { get; set; }
+    public string Currency { get; set; } = "ARS";
     public string Description { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
     public bool IsPaid { get; set; }

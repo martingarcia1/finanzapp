@@ -7,6 +7,7 @@ public class SavingsGoal
     public string Name { get; set; } = string.Empty;
     public decimal TargetAmount { get; set; }
     public decimal CurrentAmount { get; set; }
+    public string Currency { get; set; } = "ARS";
     public DateOnly? Deadline { get; set; }
     public string Description { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }

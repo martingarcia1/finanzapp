@@ -29,10 +29,10 @@ import type { Transaction, TransactionType, TransactionFormData } from '@/types'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
-}
+import CurrencyToggle from '@/components/CurrencyToggle'
+import { useExchangeRates } from '@/context/ExchangeRateContext'
+import { DOLLAR_RATE_LABELS } from '@/services/exchangeRates'
+import { formatMoney, transactionARS } from '@/lib/money'
 
 const EMPTY_FORM: TransactionFormData = {
   type: 'expense',
@@ -41,6 +41,7 @@ const EMPTY_FORM: TransactionFormData = {
   description: '',
   date: new Date().toISOString().split('T')[0],
   paymentMethod: 'cash',
+  currency: 'ARS',
 }
 
 interface TransactionDialogProps {
@@ -58,7 +59,7 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
     if (open) {
       setForm(
         initial
-          ? { type: initial.type, amount: initial.amount, category: initial.category, description: initial.description, date: initial.date, paymentMethod: initial.paymentMethod }
+          ? { type: initial.type, amount: initial.amount, category: initial.category, description: initial.description, date: initial.date, paymentMethod: initial.paymentMethod, currency: initial.currency ?? 'ARS', exchangeRate: initial.exchangeRate }
           : { ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] }
       )
       setErrors({})
@@ -79,12 +80,21 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
     return Object.keys(errs).length === 0
   }
 
+  const { rate, rateType } = useExchangeRates()
+  const isUSD = form.currency === 'USD'
+  // Al pasar a USD sin cotización cargada, se propone la actual (editable)
+  const effectiveRate = form.exchangeRate ?? rate?.sell
+
   const handleSubmit = () => {
     if (!validate()) return
+    const data: TransactionFormData = {
+      ...form,
+      exchangeRate: isUSD ? effectiveRate : undefined,
+    }
     if (initial) {
-      transactionService.update(initial.id, form)
+      transactionService.update(initial.id, data)
     } else {
-      transactionService.create(form)
+      transactionService.create(data)
     }
     onSave()
     onClose()
@@ -112,16 +122,37 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
           </ToggleButtonGroup>
         </div>
 
-        <TextField
-          label="Monto"
-          type="number"
-          fullWidth
-          value={form.amount || ''}
-          onChange={(e) => set('amount', parseFloat(e.target.value) || 0)}
-          error={!!errors.amount}
-          helperText={errors.amount}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
-        />
+        <div className="flex gap-3 items-start">
+          <TextField
+            label="Monto"
+            type="number"
+            fullWidth
+            value={form.amount || ''}
+            onChange={(e) => set('amount', parseFloat(e.target.value) || 0)}
+            error={!!errors.amount}
+            helperText={errors.amount}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start">{isUSD ? 'US$' : '$'}</InputAdornment> } }}
+          />
+          <div className="pt-2">
+            <CurrencyToggle value={form.currency ?? 'ARS'} onChange={(c) => set('currency', c)} />
+          </div>
+        </div>
+
+        {isUSD && (
+          <TextField
+            label={`Cotización (dólar ${DOLLAR_RATE_LABELS[rateType].toLowerCase()})`}
+            type="number"
+            fullWidth
+            value={effectiveRate ?? ''}
+            onChange={(e) => set('exchangeRate', parseFloat(e.target.value) || undefined)}
+            helperText={
+              effectiveRate && form.amount
+                ? `≈ ${formatMoney(form.amount * effectiveRate)} · se guarda para que tus estadísticas no cambien con el dólar`
+                : 'ARS por cada USD'
+            }
+            slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+          />
+        )}
 
         <TextField
           select
@@ -181,6 +212,7 @@ export default function Transactions() {
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all')
+  const { rate } = useExchangeRates()
 
   const load = useCallback(() => setTransactions(transactionService.getAll()), [])
 
@@ -197,8 +229,8 @@ export default function Transactions() {
     return matchType && matchSearch
   })
 
-  const totalIncome = filtered.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const totalExpense = filtered.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+  const totalIncome = filtered.filter((t) => t.type === 'income').reduce((s, t) => s + transactionARS(t, rate?.sell ?? null), 0)
+  const totalExpense = filtered.filter((t) => t.type === 'expense').reduce((s, t) => s + transactionARS(t, rate?.sell ?? null), 0)
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -217,9 +249,9 @@ export default function Transactions() {
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4">
-        <Chip icon={<TrendingUpIcon />} label={`Ingresos: ${formatCurrency(totalIncome)}`} color="success" variant="outlined" />
-        <Chip icon={<TrendingDownIcon />} label={`Egresos: ${formatCurrency(totalExpense)}`} color="error" variant="outlined" />
-        <Chip label={`Balance: ${formatCurrency(totalIncome - totalExpense)}`} color={totalIncome - totalExpense >= 0 ? 'primary' : 'error'} />
+        <Chip icon={<TrendingUpIcon />} label={`Ingresos: ${formatMoney(totalIncome)}`} color="success" variant="outlined" />
+        <Chip icon={<TrendingDownIcon />} label={`Egresos: ${formatMoney(totalExpense)}`} color="error" variant="outlined" />
+        <Chip label={`Balance: ${formatMoney(totalIncome - totalExpense)}`} color={totalIncome - totalExpense >= 0 ? 'primary' : 'error'} />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -268,9 +300,16 @@ export default function Transactions() {
                           {format(new Date(tx.date), "d 'de' MMMM yyyy", { locale: es })} · {PAYMENT_METHODS.find(m => m.value === tx.paymentMethod)?.label}
                         </Typography>
                       </div>
-                      <Typography variant="body1" sx={{ fontWeight: 700, color: isIncome ? '#2e7d32' : '#c62828' }} className="shrink-0">
-                        {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
-                      </Typography>
+                      <div className="shrink-0 text-right">
+                        <Typography variant="body1" sx={{ fontWeight: 700, color: isIncome ? '#2e7d32' : '#c62828' }}>
+                          {isIncome ? '+' : '-'}{formatMoney(tx.amount, tx.currency)}
+                        </Typography>
+                        {tx.currency === 'USD' && (
+                          <Typography variant="caption" color="text.secondary">
+                            ≈ {formatMoney(transactionARS(tx, rate?.sell ?? null))}
+                          </Typography>
+                        )}
+                      </div>
                       <div className="flex shrink-0">
                         <Tooltip title="Editar">
                           <IconButton size="small" onClick={() => { setEditing(tx); setDialogOpen(true) }}>

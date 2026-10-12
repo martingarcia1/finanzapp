@@ -19,7 +19,7 @@ public class DebtsController(AppDbContext db) : ControllerBase
     private static DebtDto ToDto(Debt d) =>
         new(d.Id, d.UserId, d.Direction, d.PersonName, d.Amount,
             d.OriginalAmount, d.Description, d.DueDate,
-            d.IsPaid, d.PaidAt, d.CreatedAt);
+            d.IsPaid, d.PaidAt, d.CreatedAt, d.Currency);
 
     [HttpGet]
     public async Task<ActionResult<List<DebtDto>>> GetAll()
@@ -36,6 +36,8 @@ public class DebtsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<DebtDto>> Create(DebtCreateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
 
         var entity = new Debt
         {
@@ -45,6 +47,7 @@ public class DebtsController(AppDbContext db) : ControllerBase
             PersonName = dto.PersonName,
             Amount = dto.Amount,
             OriginalAmount = dto.Amount,
+            Currency = currency,
             Description = dto.Description,
             DueDate = dto.DueDate,
             IsPaid = false,
@@ -60,6 +63,8 @@ public class DebtsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<DebtDto>> Update(Guid id, DebtUpdateDto dto)
     {
         var userId = GetUserId();
+        var currency = Currencies.Normalize(dto.Currency);
+        if (currency is null) return BadRequest(new { message = "Moneda no soportada." });
         var entity = await db.Debts.FirstOrDefaultAsync(d => d.Id == id);
 
         if (entity is null) return NotFound();
@@ -69,6 +74,7 @@ public class DebtsController(AppDbContext db) : ControllerBase
         entity.PersonName = dto.PersonName;
         entity.Amount = dto.Amount;
         entity.OriginalAmount = dto.OriginalAmount;
+        entity.Currency = currency;
         entity.Description = dto.Description;
         entity.DueDate = dto.DueDate;
         entity.IsPaid = dto.IsPaid;

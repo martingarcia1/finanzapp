@@ -10,13 +10,15 @@ public record SavingsGoalDto(
     string Description,
     bool IsCompleted,
     DateTime? CompletedAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Currency);
 
 public record SavingsGoalCreateDto(
     string Name,
     decimal TargetAmount,
     DateOnly? Deadline,
-    string Description);
+    string Description,
+    string Currency = "ARS");
 
 public record SavingsGoalUpdateDto(
     string Name,
@@ -24,6 +26,7 @@ public record SavingsGoalUpdateDto(
     decimal CurrentAmount,
     DateOnly? Deadline,
     string Description,
-    bool IsCompleted);
+    bool IsCompleted,
+    string Currency = "ARS");
 
 public record AddFundsDto(decimal Amount);

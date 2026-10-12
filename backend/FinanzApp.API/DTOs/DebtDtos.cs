@@ -11,14 +11,16 @@ public record DebtDto(
     DateOnly? DueDate,
     bool IsPaid,
     DateTime? PaidAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Currency);
 
 public record DebtCreateDto(
     string Direction,
     string PersonName,
     decimal Amount,
     string Description,
-    DateOnly? DueDate);
+    DateOnly? DueDate,
+    string Currency = "ARS");
 
 public record DebtUpdateDto(
     string Direction,
@@ -27,6 +29,7 @@ public record DebtUpdateDto(
     decimal OriginalAmount,
     string Description,
     DateOnly? DueDate,
-    bool IsPaid);
+    bool IsPaid,
+    string Currency = "ARS");
 
 public record DebtPaymentDto(decimal Amount);
