@@ -16,7 +16,7 @@ public class DebtsController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static DebtDto ToDto(Debt d) =>
+    internal static DebtDto ToDto(Debt d) =>
         new(d.Id, d.UserId, d.Direction, d.PersonName, d.Amount,
             d.OriginalAmount, d.Description, d.DueDate,
             d.IsPaid, d.PaidAt, d.CreatedAt, d.Currency);

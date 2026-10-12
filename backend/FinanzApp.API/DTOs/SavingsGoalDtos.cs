@@ -18,7 +18,8 @@ public record SavingsGoalCreateDto(
     decimal TargetAmount,
     DateOnly? Deadline,
     string Description,
-    string Currency = "ARS");
+    string Currency = "ARS",
+    decimal CurrentAmount = 0);
 
 public record SavingsGoalUpdateDto(
     string Name,

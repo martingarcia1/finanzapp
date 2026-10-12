@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
-import api from '@/services/api'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import api, { TOKEN_KEY, UNAUTHORIZED_EVENT } from '@/services/api'
 import { loginWithBiometric as webAuthnLogin } from '@/services/webauthn'
 
 interface AuthUser {
@@ -21,7 +22,9 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 function parseToken(token: string): AuthUser | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    // Token vencido: se trata como sesión cerrada
+    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) return null
     return {
       userId: payload.sub,
       email: payload.email,
@@ -33,18 +36,23 @@ function parseToken(token: string): AuthUser | null {
 }
 
 function loadStoredUser(): AuthUser | null {
-  const token = localStorage.getItem('fa_token')
+  const token = localStorage.getItem(TOKEN_KEY)
   if (!token) return null
-  return parseToken(token)
+  const user = parseToken(token)
+  if (!user) localStorage.removeItem(TOKEN_KEY)
+  return user
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadStoredUser)
+  const queryClient = useQueryClient()
 
   const storeAuth = useCallback((token: string) => {
-    localStorage.setItem('fa_token', token)
+    // Nunca mostrar datos cacheados de otra sesión
+    queryClient.clear()
+    localStorage.setItem(TOKEN_KEY, token)
     setUser(parseToken(token))
-  }, [])
+  }, [queryClient])
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password })
@@ -62,9 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [storeAuth])
 
   const logout = useCallback(() => {
-    localStorage.removeItem('fa_token')
+    localStorage.removeItem(TOKEN_KEY)
+    queryClient.clear()
     setUser(null)
-  }, [])
+  }, [queryClient])
+
+  // El API respondió 401 (token vencido o inválido): volver al login
+  useEffect(() => {
+    window.addEventListener(UNAUTHORIZED_EVENT, logout)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, logout)
+  }, [logout])
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, loginBiometric, register, logout }}>

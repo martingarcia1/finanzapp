@@ -7,7 +7,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Chip,
   Avatar,
   Divider,
   Alert,
@@ -28,61 +27,14 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import FingerprintIcon from '@mui/icons-material/Fingerprint'
 import DeleteIcon from '@mui/icons-material/Delete'
 import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange'
-import {
-  transactionService,
-  recurringService,
-  debtService,
-  savingsService,
-  fixedExpenseService,
-  walletService,
-  settingsService,
-} from '@/services/storage'
-import api from '@/services/api'
+import { settingsService } from '@/services/storage'
+import { dataService, isDataBundle } from '@/services/finance'
+import { useDataSummary, useRefresh } from '@/hooks/useFinanceData'
+import api, { getApiErrorMessage } from '@/services/api'
 import { useExchangeRates } from '@/context/ExchangeRateContext'
 import { DOLLAR_RATE_LABELS, type DollarRateCode } from '@/services/exchangeRates'
 import { formatRate } from '@/lib/money'
 import { registerBiometric, isWebAuthnSupported } from '@/services/webauthn'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getAllData() {
-  return {
-    transactions: transactionService.getAll(),
-    recurring: recurringService.getAll(),
-    debts: debtService.getAll(),
-    savings: savingsService.getAll(),
-    fixedExpenses: fixedExpenseService.getAll(),
-    wallets: walletService.getAll(),
-    settings: settingsService.get(),
-    exportedAt: new Date().toISOString(),
-    version: '1.0',
-  }
-}
-
-type BackupData = ReturnType<typeof getAllData>
-
-function isValidBackup(obj: unknown): obj is BackupData {
-  if (typeof obj !== 'object' || obj === null) return false
-  const b = obj as Record<string, unknown>
-  return (
-    Array.isArray(b.transactions) &&
-    Array.isArray(b.recurring) &&
-    Array.isArray(b.debts) &&
-    Array.isArray(b.savings) &&
-    Array.isArray(b.fixedExpenses) &&
-    Array.isArray(b.wallets)
-  )
-}
-
-function storageUsageKB(): number {
-  let total = 0
-  for (const key of Object.keys(localStorage)) {
-    if (key.startsWith('fa_')) {
-      total += (localStorage.getItem(key) ?? '').length
-    }
-  }
-  return Math.round(total / 102.4) / 10
-}
 
 // ─── Sección contenedor ───────────────────────────────────────────────────────
 
@@ -154,13 +106,16 @@ export default function Settings() {
   }, [])
 
   // Estadísticas
+  const { data: summary } = useDataSummary()
+  const refresh = useRefresh()
+  const [busy, setBusy] = useState(false)
   const stats = [
-    { label: 'Transacciones',  count: transactionService.getAll().length,   color: '#1976d2' },
-    { label: 'Recurrentes',    count: recurringService.getAll().length,      color: '#7b1fa2' },
-    { label: 'Deudas',         count: debtService.getAll().length,           color: '#e65100' },
-    { label: 'Metas',          count: savingsService.getAll().length,        color: '#2e7d32' },
-    { label: 'Gastos fijos',   count: fixedExpenseService.getAll().length,   color: '#c62828' },
-    { label: 'Billeteras',     count: walletService.getAll().length,         color: '#6a1b9a' },
+    { label: 'Transacciones',  count: summary?.transactions,  color: '#1976d2' },
+    { label: 'Recurrentes',    count: summary?.recurring,     color: '#7b1fa2' },
+    { label: 'Deudas',         count: summary?.debts,         color: '#e65100' },
+    { label: 'Metas',          count: summary?.savings,       color: '#2e7d32' },
+    { label: 'Gastos fijos',   count: summary?.fixedExpenses, color: '#c62828' },
+    { label: 'Billeteras',     count: summary?.wallets,       color: '#6a1b9a' },
   ]
 
   // ── Guardar nombre ──────────────────────────────────────────────────────────
@@ -172,64 +127,78 @@ export default function Settings() {
   }
 
   // ── Exportar ────────────────────────────────────────────────────────────────
-  const handleExport = () => {
-    const data = getAllData()
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `finanzapp-backup-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleExport = async () => {
+    setBusy(true)
+    try {
+      const data = { ...(await dataService.export()), settings: settingsService.get(), version: '2.0' }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `finanzapp-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setImportStatus('error')
+      setImportMsg(getApiErrorMessage(e, 'No se pudo exportar'))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  // ── Importar ────────────────────────────────────────────────────────────────
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── Importar (reemplaza los datos actuales) ─────────────────────────────────
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    e.target.value = ''
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target?.result as string)
-        if (!isValidBackup(parsed)) throw new Error('Formato inválido')
-
-        localStorage.setItem('fa_transactions', JSON.stringify(parsed.transactions))
-        localStorage.setItem('fa_recurring', JSON.stringify(parsed.recurring))
-        localStorage.setItem('fa_debts', JSON.stringify(parsed.debts))
-        localStorage.setItem('fa_savings', JSON.stringify(parsed.savings))
-        localStorage.setItem('fa_fixed_expenses', JSON.stringify(parsed.fixedExpenses))
-        localStorage.setItem('fa_wallets', JSON.stringify(parsed.wallets))
-        if (parsed.settings) localStorage.setItem('fa_settings', JSON.stringify(parsed.settings))
-
-        setImportStatus('success')
-        setImportMsg(`Datos importados correctamente. Exportado el ${new Date(parsed.exportedAt).toLocaleDateString('es-AR')}.`)
-        if (parsed.settings?.userName) setUserName(parsed.settings.userName)
-      } catch {
-        setImportStatus('error')
-        setImportMsg('El archivo no es un backup válido de FinanzApp.')
-      }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await file.text())
+      if (!isDataBundle(parsed)) throw new Error('Formato inválido')
+    } catch {
+      setImportStatus('error')
+      setImportMsg('El archivo no es un backup válido de FinanzApp.')
+      return
     }
-    reader.readAsText(file)
-    e.target.value = ''
+
+    setBusy(true)
+    try {
+      const result = await dataService.import(parsed, true)
+      const backup = parsed as { settings?: { userName?: string } }
+      if (backup.settings?.userName) {
+        settingsService.set({ userName: backup.settings.userName })
+        setUserName(backup.settings.userName)
+      }
+      await refresh()
+      setImportStatus('success')
+      setImportMsg(`Backup restaurado: ${result.transactions} transacciones, ${result.wallets} billeteras y más.`)
+    } catch (err) {
+      setImportStatus('error')
+      setImportMsg(getApiErrorMessage(err, 'No se pudo importar el backup'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   // ── Limpiar datos ────────────────────────────────────────────────────────────
-  const handleClear = () => {
+  const handleClear = async () => {
     if (clearConfirm !== 'BORRAR') return
-    localStorage.removeItem('fa_transactions')
-    localStorage.removeItem('fa_recurring')
-    localStorage.removeItem('fa_debts')
-    localStorage.removeItem('fa_savings')
-    localStorage.removeItem('fa_fixed_expenses')
-    localStorage.removeItem('fa_wallets')
-    setClearOpen(false)
-    setClearConfirm('')
-    setImportStatus('success')
-    setImportMsg('Todos los datos fueron eliminados.')
+    setBusy(true)
+    try {
+      await dataService.deleteAll()
+      await refresh()
+      setImportStatus('success')
+      setImportMsg('Todos los datos fueron eliminados.')
+    } catch (err) {
+      setImportStatus('error')
+      setImportMsg(getApiErrorMessage(err, 'No se pudieron eliminar los datos'))
+    } finally {
+      setBusy(false)
+      setClearOpen(false)
+      setClearConfirm('')
+    }
   }
-
-  const usageKB = storageUsageKB()
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -306,18 +275,13 @@ export default function Settings() {
           {stats.map((s) => (
             <div key={s.label} className="text-center py-3 rounded-lg bg-gray-50">
               <Typography variant="h5" sx={{ fontWeight: 800, color: s.color }}>
-                {s.count}
+                {s.count ?? '—'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {s.label}
               </Typography>
             </div>
           ))}
-        </div>
-        <Divider sx={{ mb: 2 }} />
-        <div className="flex items-center justify-between">
-          <Typography variant="body2" color="text.secondary">Espacio usado en localStorage</Typography>
-          <Chip label={`${usageKB} KB`} size="small" variant="outlined" />
         </div>
       </Section>
 
@@ -336,6 +300,7 @@ export default function Settings() {
               color="success"
               startIcon={<DownloadIcon />}
               onClick={handleExport}
+              disabled={busy}
               sx={{ flexShrink: 0 }}
             >
               Exportar
@@ -363,6 +328,7 @@ export default function Settings() {
                 variant="outlined"
                 startIcon={<UploadIcon />}
                 onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
                 sx={{ flexShrink: 0 }}
               >
                 Importar
@@ -454,7 +420,7 @@ export default function Settings() {
       <div className="bg-gray-50 rounded-xl border border-gray-200 px-5 py-4 text-center">
         <Typography variant="body2" sx={{ fontWeight: 700, color: '#1976d2' }}>FinanzApp</Typography>
         <Typography variant="caption" color="text.secondary">
-          v1.0 · Datos almacenados en localStorage del navegador
+          v2.0 · Tus datos se guardan en tu cuenta
         </Typography>
       </div>
 
@@ -481,8 +447,8 @@ export default function Settings() {
           <Button
             variant="contained"
             color="error"
-            disabled={clearConfirm !== 'BORRAR'}
             onClick={handleClear}
+            disabled={busy || clearConfirm !== 'BORRAR'}
             startIcon={<DeleteForeverIcon />}
           >
             Eliminar todo

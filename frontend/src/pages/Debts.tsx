@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   CardContent,
@@ -23,9 +23,11 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import PersonIcon from '@mui/icons-material/Person'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
-import { debtService } from '@/services/storage'
+import { debtService } from '@/services/finance'
+import { getApiErrorMessage } from '@/services/api'
+import { useDebts, useRefresh } from '@/hooks/useFinanceData'
 import type { Debt, DebtFormData } from '@/types'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 import CurrencyToggle from '@/components/CurrencyToggle'
@@ -68,11 +70,20 @@ function DebtDialog({ open, onClose, onSave }: DebtDialogProps) {
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     if (!validate()) return
-    debtService.create(form)
-    onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await debtService.create(form)
+      onSave()
+      onClose()
+    } catch {
+      // El error se muestra en el snackbar global
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -129,7 +140,7 @@ function DebtDialog({ open, onClose, onSave }: DebtDialogProps) {
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained">Agregar</Button>
+        <Button onClick={handleSubmit} variant="contained" disabled={saving}>Agregar</Button>
       </DialogActions>
     </Dialog>
   )
@@ -147,13 +158,22 @@ function PartialPaymentDialog({ debt, onClose, onSave }: PartialPaymentDialogPro
 
   useEffect(() => { if (debt) { setAmount(''); setError('') } }, [debt])
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     const val = parseFloat(amount)
     if (!val || val <= 0) { setError('Ingresá un monto válido'); return }
     if (val > (debt?.amount ?? 0)) { setError('El monto supera la deuda actual'); return }
-    debtService.partialPayment(debt!.id, val)
-    onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await debtService.partialPayment(debt!.id, val)
+      onSave()
+      onClose()
+    } catch (e) {
+      setError(getApiErrorMessage(e, 'No se pudo registrar el pago'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -180,22 +200,23 @@ function PartialPaymentDialog({ debt, onClose, onSave }: PartialPaymentDialogPro
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained">Registrar pago</Button>
+        <Button onClick={handleSubmit} variant="contained" disabled={saving}>Registrar pago</Button>
       </DialogActions>
     </Dialog>
   )
 }
 
 export default function Debts() {
-  const [debts, setDebts] = useState<Debt[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [payingDebt, setPayingDebt] = useState<Debt | null>(null)
   const [showPaid, setShowPaid] = useState(false)
   const { toARS } = useExchangeRates()
 
-  const load = useCallback(() => setDebts(debtService.getAll()), [])
+  const { data: debts = [] } = useDebts()
+  const refresh = useRefresh()
+  const load = () => refresh('debts')
 
-  useEffect(() => { load() }, [load])
+  const runAndReload = (action: Promise<unknown>) => action.catch(() => {}).then(load)
 
   const active = debts.filter((d) => !d.isPaid)
   const paid = debts.filter((d) => d.isPaid)
@@ -277,7 +298,7 @@ export default function Debts() {
                       )}
                       {debt.dueDate && (
                         <Typography variant="caption" color="text.secondary" className="block">
-                          Vence: {format(new Date(debt.dueDate), 'd MMM yyyy', { locale: es })}
+                          Vence: {format(parseISO(debt.dueDate), 'd MMM yyyy', { locale: es })}
                         </Typography>
                       )}
                       {!debt.isPaid && debt.originalAmount !== debt.amount && (
@@ -299,12 +320,12 @@ export default function Debts() {
                             Pagar parcial
                           </Button>
                           <Tooltip title="Marcar como pagada">
-                            <IconButton size="small" color="success" onClick={() => { debtService.markPaid(debt.id); load() }}>
+                            <IconButton size="small" color="success" onClick={() => runAndReload(debtService.markPaid(debt.id))}>
                               <CheckCircleIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Eliminar">
-                            <IconButton size="small" color="error" onClick={() => { debtService.delete(debt.id); load() }}>
+                            <IconButton size="small" color="error" onClick={() => runAndReload(debtService.delete(debt.id))}>
                               <DeleteIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>

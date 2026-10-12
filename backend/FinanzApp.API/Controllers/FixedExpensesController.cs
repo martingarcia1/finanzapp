@@ -16,7 +16,7 @@ public class FixedExpensesController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static FixedExpenseDto ToDto(FixedExpense f) =>
+    internal static FixedExpenseDto ToDto(FixedExpense f) =>
         new(f.Id, f.UserId, f.Name, f.Amount, f.Category,
             f.DayOfMonth, f.Description, f.IsActive, f.CreatedAt);
 

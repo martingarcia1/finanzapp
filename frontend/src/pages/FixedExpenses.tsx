@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   CardContent,
@@ -22,7 +22,8 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
-import { fixedExpenseService } from '@/services/storage'
+import { fixedExpenseService } from '@/services/finance'
+import { useFixedExpenses, useRefresh } from '@/hooks/useFinanceData'
 import type { FixedExpense, FixedExpenseFormData } from '@/types'
 import { EXPENSE_CATEGORIES } from '@/types'
 
@@ -153,27 +154,28 @@ function ExpenseDialog({ open, initial, onClose, onSave }: ExpenseDialogProps) {
 }
 
 export default function FixedExpenses() {
-  const [items, setItems] = useState<FixedExpense[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<FixedExpense | null>(null)
 
-  const load = useCallback(() => setItems(fixedExpenseService.getAll()), [])
-  useEffect(() => { load() }, [load])
+  const { data: items = [] } = useFixedExpenses()
+  const refresh = useRefresh()
+  const load = () => refresh('fixedExpenses')
 
   const active = items.filter((i) => i.isActive)
   const inactive = items.filter((i) => !i.isActive)
   const totalMonthly = active.reduce((s, i) => s + i.amount, 0)
   const maxAmount = Math.max(...items.map((i) => i.amount), 1)
 
-  const handleSave = (data: FixedExpenseFormData) => {
-    if (editing) {
-      fixedExpenseService.update(editing.id, data)
-    } else {
-      fixedExpenseService.create(data)
+  const handleSave = async (data: FixedExpenseFormData) => {
+    try {
+      if (editing) await fixedExpenseService.update(editing.id, data)
+      else await fixedExpenseService.create(data)
+      setDialogOpen(false)
+      setEditing(null)
+      load()
+    } catch {
+      // El error se muestra en el snackbar global
     }
-    setDialogOpen(false)
-    setEditing(null)
-    load()
   }
 
   const handleEdit = (item: FixedExpense) => {
@@ -181,13 +183,14 @@ export default function FixedExpenses() {
     setDialogOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    fixedExpenseService.delete(id)
+  const handleDelete = async (id: string) => {
+    await fixedExpenseService.delete(id).catch(() => {})
     load()
   }
 
-  const handleToggle = (id: string, isActive: boolean) => {
-    fixedExpenseService.update(id, { isActive })
+  // El API recibe el gasto completo en el update
+  const handleToggle = async (item: FixedExpense) => {
+    await fixedExpenseService.update(item.id, { ...item, isActive: !item.isActive }).catch(() => {})
     load()
   }
 
@@ -327,7 +330,7 @@ export default function FixedExpenses() {
                           <Switch
                             size="small"
                             checked={item.isActive}
-                            onChange={() => handleToggle(item.id, !item.isActive)}
+                            onChange={() => handleToggle(item)}
                             color="error"
                           />
                         </Tooltip>

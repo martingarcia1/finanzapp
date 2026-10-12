@@ -12,7 +12,8 @@ import {
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import BarChartIcon from '@mui/icons-material/BarChart'
-import { transactionService } from '@/services/storage'
+import { transactionsInMonth } from '@/services/finance'
+import { useTransactions } from '@/hooks/useFinanceData'
 import type { Transaction } from '@/types'
 import { format, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -41,11 +42,12 @@ export default function Statistics() {
 
   const option = MONTHS_OPTIONS.find((o) => o.value === selected)!
   const { rate } = useExchangeRates()
+  const { data: transactions = [] } = useTransactions()
 
   const { income, expenses, balance, topExpenseCategories, topIncomeCategories, last6Months } = useMemo(() => {
     // Todo se expresa en ARS; los USD usan la cotización guardada al registrarlos
     const ars = (t: Transaction) => transactionARS(t, rate?.sell ?? null)
-    const txs = transactionService.getByMonth(option.year, option.month)
+    const txs = transactionsInMonth(transactions, option.year, option.month)
     const income = txs.filter((t) => t.type === 'income').reduce((s, t) => s + ars(t), 0)
     const expenses = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + ars(t), 0)
     const balance = income - expenses
@@ -73,7 +75,7 @@ export default function Statistics() {
 
     const last6Months = Array.from({ length: 6 }, (_, i) => {
       const d = subMonths(new Date(), 5 - i)
-      const monthTxs = transactionService.getByMonth(d.getFullYear(), d.getMonth())
+      const monthTxs = transactionsInMonth(transactions, d.getFullYear(), d.getMonth())
       return {
         label: format(d, 'MMM', { locale: es }),
         income: monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + ars(t), 0),
@@ -82,7 +84,7 @@ export default function Statistics() {
     })
 
     return { income, expenses, balance, topExpenseCategories, topIncomeCategories, last6Months }
-  }, [option, rate])
+  }, [option, rate, transactions])
 
   const maxBar = Math.max(...last6Months.map((m) => Math.max(m.income, m.expense)), 1)
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Typography,
   Button,
@@ -25,9 +25,11 @@ import {
   isSameMonth,
   isToday,
   getDay,
+  parseISO,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { recurringService } from '@/services/storage'
+import { recurringService } from '@/services/finance'
+import { useRecurring, useRefresh } from '@/hooks/useFinanceData'
 import type { RecurringTransaction, RecurringTransactionFormData, TransactionType } from '@/types'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/types'
 
@@ -51,7 +53,7 @@ const EMPTY_FORM: RecurringTransactionFormData = {
   pattern: 'weekly',
   daysOfWeek: [],
   dayOfMonth: 1,
-  startDate: new Date().toISOString().split('T')[0],
+  startDate: format(new Date(), 'yyyy-MM-dd'),
   isActive: true,
 }
 
@@ -68,9 +70,9 @@ function getChipsForDay(date: Date, recurring: RecurringTransaction[]): DayChip[
   const chips: DayChip[] = []
 
   recurring.filter((r) => r.isActive).forEach((r) => {
-    const startDate = new Date(r.startDate)
+    const startDate = parseISO(r.startDate)
     if (date < startDate) return
-    if (r.endDate && date > new Date(r.endDate)) return
+    if (r.endDate && date > parseISO(r.endDate)) return
 
     const effectiveDows = r.daysOfWeek ?? (r.dayOfWeek !== undefined ? [r.dayOfWeek] : [])
     const matches =
@@ -91,13 +93,14 @@ function getChipsForDay(date: Date, recurring: RecurringTransaction[]): DayChip[
 }
 
 export default function Calendar() {
-  const [items, setItems] = useState<RecurringTransaction[]>([])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [form, setForm] = useState<RecurringTransactionFormData>(EMPTY_FORM)
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({})
 
-  const load = useCallback(() => setItems(recurringService.getAll()), [])
-  useEffect(() => { load() }, [load])
+  const { data: items = [] } = useRecurring()
+  const refresh = useRefresh()
+  const load = () => refresh('recurring')
+  const [saving, setSaving] = useState(false)
 
   const set = <K extends keyof RecurringTransactionFormData>(key: K, value: RecurringTransactionFormData[K]) => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -115,12 +118,19 @@ export default function Calendar() {
     return Object.keys(errs).length === 0
   }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!validate()) return
-    recurringService.create(form)
-    setForm({ ...EMPTY_FORM, startDate: new Date().toISOString().split('T')[0] })
-    setErrors({})
-    load()
+    setSaving(true)
+    try {
+      await recurringService.create(form)
+      setForm({ ...EMPTY_FORM, startDate: format(new Date(), 'yyyy-MM-dd') })
+      setErrors({})
+      load()
+    } catch {
+      // El error se muestra en el snackbar global
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleDow = (dow: number) => {
@@ -164,7 +174,7 @@ export default function Calendar() {
           <ToggleButtonGroup
             value={form.type}
             exclusive
-            onChange={(_, v) => v && set('type', v as TransactionType)}
+            onChange={(_, v) => { if (v) { set('type', v as TransactionType); set('category', '') } }}
             size="small"
             sx={{ width: '100%', maxWidth: 500 }}
           >
@@ -284,6 +294,7 @@ export default function Calendar() {
           variant="contained"
           fullWidth
           onClick={handleAdd}
+          disabled={saving}
           sx={{ mt: 3, py: 1.2, fontWeight: 700, letterSpacing: 1 }}
         >
           AGREGAR
@@ -302,7 +313,7 @@ export default function Calendar() {
               const effectiveDows = item.daysOfWeek ?? (item.dayOfWeek !== undefined ? [item.dayOfWeek] : [])
               const daysLabel =
                 item.pattern === 'weekly'
-                  ? effectiveDows.sort((a, b) => a - b).map((d) => DAYS_SHORT[d]).join(', ')
+                  ? [...effectiveDows].sort((a, b) => a - b).map((d) => DAYS_SHORT[d]).join(', ')
                   : `Día ${item.dayOfMonth} de cada mes`
               const paymentLabel = PAYMENT_METHODS.find((m) => m.value === item.paymentMethod)?.label
 
@@ -350,7 +361,7 @@ export default function Calendar() {
                       <Switch
                         size="small"
                         checked={item.isActive}
-                        onChange={() => { recurringService.toggleActive(item.id); load() }}
+                        onChange={() => recurringService.toggleActive(item.id).catch(() => {}).then(load)}
                         color={isIncome ? 'success' : 'error'}
                       />
                     </Tooltip>
@@ -358,7 +369,7 @@ export default function Calendar() {
                       <IconButton
                         size="small"
                         color="error"
-                        onClick={() => { recurringService.delete(item.id); load() }}
+                        onClick={() => recurringService.delete(item.id).catch(() => {}).then(load)}
                       >
                         <DeleteIcon fontSize="small" />
                       </IconButton>

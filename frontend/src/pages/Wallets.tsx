@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Typography,
   Button,
@@ -27,7 +27,9 @@ import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import CurrencyBitcoinIcon from '@mui/icons-material/CurrencyBitcoin'
 import WalletIcon from '@mui/icons-material/Wallet'
-import { walletService } from '@/services/storage'
+import { walletService } from '@/services/finance'
+import { getApiErrorMessage } from '@/services/api'
+import { useWallets, useRefresh } from '@/hooks/useFinanceData'
 import type { Wallet, WalletFormData, WalletType } from '@/types'
 import { WALLET_TYPES, WALLET_COLORS } from '@/types'
 import CurrencyToggle from '@/components/CurrencyToggle'
@@ -203,16 +205,25 @@ function AdjustDialog({ wallet, onClose, onSave }: AdjustDialogProps) {
     if (wallet) { setOp('add'); setAmount(''); setError('') }
   }, [wallet])
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     const val = parseFloat(amount)
     if (!val || val <= 0) { setError('Ingresá un monto válido'); return }
     if (op === 'subtract' && wallet && val > wallet.balance) {
       setError('No podés retirar más de lo disponible')
       return
     }
-    walletService.adjustBalance(wallet!.id, op === 'add' ? val : -val)
-    onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await walletService.adjustBalance(wallet!.id, op === 'add' ? val : -val)
+      onSave()
+      onClose()
+    } catch (e) {
+      setError(getApiErrorMessage(e, 'No se pudo ajustar el saldo'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -253,7 +264,7 @@ function AdjustDialog({ wallet, onClose, onSave }: AdjustDialogProps) {
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained" color={op === 'add' ? 'success' : 'error'}>
+        <Button onClick={handleSubmit} variant="contained" color={op === 'add' ? 'success' : 'error'} disabled={saving}>
           {op === 'add' ? 'Ingresar' : 'Retirar'}
         </Button>
       </DialogActions>
@@ -318,11 +329,20 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     if (!validate()) return
-    const success = walletService.transfer(fromId, toId, val, crossCurrency ? credited : undefined)
-    if (success) { onSave(); onClose() }
-    else setErrors({ amount: 'Error al transferir. Verificá el saldo.' })
+    setSaving(true)
+    try {
+      await walletService.transfer(fromId, toId, val, crossCurrency ? credited : undefined)
+      onSave()
+      onClose()
+    } catch (e) {
+      setErrors({ amount: getApiErrorMessage(e, 'Error al transferir. Verificá el saldo.') })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -397,7 +417,7 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained" startIcon={<SwapHorizIcon />}>
+        <Button onClick={handleSubmit} variant="contained" startIcon={<SwapHorizIcon />} disabled={saving}>
           Transferir
         </Button>
       </DialogActions>
@@ -408,14 +428,14 @@ function TransferDialog({ open, wallets, onClose, onSave }: TransferDialogProps)
 // ─── Página principal ──────────────────────────────────────────────────────
 
 export default function Wallets() {
-  const [wallets, setWallets] = useState<Wallet[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Wallet | null>(null)
   const [adjusting, setAdjusting] = useState<Wallet | null>(null)
   const [transferOpen, setTransferOpen] = useState(false)
 
-  const load = useCallback(() => setWallets(walletService.getAll()), [])
-  useEffect(() => { load() }, [load])
+  const { data: wallets = [], isLoading } = useWallets()
+  const refresh = useRefresh()
+  const load = () => refresh('wallets')
 
   const { toARS, rate, rateType } = useExchangeRates()
   const totalARS = wallets.filter((w) => (w.currency ?? 'ARS') === 'ARS').reduce((s, w) => s + w.balance, 0)
@@ -423,12 +443,16 @@ export default function Wallets() {
   // Patrimonio total expresado en pesos, valuando los dólares a la cotización elegida
   const total = totalARS + toARS(totalUSD, 'USD')
 
-  const handleSave = (data: WalletFormData) => {
-    if (editing) walletService.update(editing.id, data)
-    else walletService.create(data)
-    setDialogOpen(false)
-    setEditing(null)
-    load()
+  const handleSave = async (data: WalletFormData) => {
+    try {
+      if (editing) await walletService.update(editing.id, data)
+      else await walletService.create(data)
+      setDialogOpen(false)
+      setEditing(null)
+      load()
+    } catch {
+      // El error se muestra en el snackbar global
+    }
   }
 
   const handleEdit = (w: Wallet) => {
@@ -436,8 +460,8 @@ export default function Wallets() {
     setDialogOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    walletService.delete(id)
+  const handleDelete = async (id: string) => {
+    await walletService.delete(id).catch(() => {})
     load()
   }
 
@@ -510,7 +534,9 @@ export default function Wallets() {
       )}
 
       {/* Grid de billeteras */}
-      {wallets.length === 0 ? (
+      {isLoading ? (
+        <Typography color="text.secondary" className="py-12 text-center">Cargando…</Typography>
+      ) : wallets.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <Avatar sx={{ bgcolor: '#e3f2fd', width: 56, height: 56, mx: 'auto', mb: 2 }}>
             <WalletIcon sx={{ color: '#1976d2', fontSize: 28 }} />

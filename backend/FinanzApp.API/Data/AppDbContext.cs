@@ -1,5 +1,7 @@
+using System.Text.Json;
 using FinanzApp.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace FinanzApp.API.Data;
 
@@ -63,7 +65,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(r => r.Id);
             e.Property(r => r.Id).ValueGeneratedOnAdd();
             e.Property(r => r.Amount).HasColumnType("numeric(18,2)");
-            e.Property(r => r.DaysOfWeek).HasColumnType("jsonb");
+            // Npgsql 8 no serializa int[] a jsonb sin EnableDynamicJson: convertimos explícitamente.
+            e.Property(r => r.DaysOfWeek)
+             .HasColumnType("jsonb")
+             .HasConversion(
+                 v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                 v => v == null ? null : JsonSerializer.Deserialize<int[]>(v, (JsonSerializerOptions?)null),
+                 new ValueComparer<int[]?>(
+                     (a, b) => a == null ? b == null : b != null && a.SequenceEqual(b),
+                     v => v == null ? 0 : v.Aggregate(0, (h, x) => HashCode.Combine(h, x)),
+                     v => v == null ? null : v.ToArray()));
             e.HasOne(r => r.User)
              .WithMany()
              .HasForeignKey(r => r.UserId)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   CardContent,
@@ -24,10 +24,11 @@ import EditIcon from '@mui/icons-material/Edit'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import SearchIcon from '@mui/icons-material/Search'
-import { transactionService } from '@/services/storage'
+import { transactionService } from '@/services/finance'
+import { useTransactions, useRefresh } from '@/hooks/useFinanceData'
 import type { Transaction, TransactionType, TransactionFormData } from '@/types'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/types'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import CurrencyToggle from '@/components/CurrencyToggle'
 import { useExchangeRates } from '@/context/ExchangeRateContext'
@@ -39,7 +40,7 @@ const EMPTY_FORM: TransactionFormData = {
   amount: 0,
   category: '',
   description: '',
-  date: new Date().toISOString().split('T')[0],
+  date: format(new Date(), 'yyyy-MM-dd'),
   paymentMethod: 'cash',
   currency: 'ARS',
 }
@@ -60,7 +61,7 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
       setForm(
         initial
           ? { type: initial.type, amount: initial.amount, category: initial.category, description: initial.description, date: initial.date, paymentMethod: initial.paymentMethod, currency: initial.currency ?? 'ARS', exchangeRate: initial.exchangeRate }
-          : { ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] }
+          : { ...EMPTY_FORM, date: format(new Date(), 'yyyy-MM-dd') }
       )
       setErrors({})
     }
@@ -85,19 +86,25 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
   // Al pasar a USD sin cotización cargada, se propone la actual (editable)
   const effectiveRate = form.exchangeRate ?? rate?.sell
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     if (!validate()) return
     const data: TransactionFormData = {
       ...form,
       exchangeRate: isUSD ? effectiveRate : undefined,
     }
-    if (initial) {
-      transactionService.update(initial.id, data)
-    } else {
-      transactionService.create(data)
+    setSaving(true)
+    try {
+      if (initial) await transactionService.update(initial.id, data)
+      else await transactionService.create(data)
+      onSave()
+      onClose()
+    } catch {
+      // El error se muestra en el snackbar global
+    } finally {
+      setSaving(false)
     }
-    onSave()
-    onClose()
   }
 
   const categories = form.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
@@ -198,7 +205,7 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained">
+        <Button onClick={handleSubmit} variant="contained" disabled={saving}>
           {initial ? 'Guardar cambios' : 'Agregar'}
         </Button>
       </DialogActions>
@@ -207,19 +214,18 @@ function TransactionDialog({ open, initial, onClose, onSave }: TransactionDialog
 }
 
 export default function Transactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all')
   const { rate } = useExchangeRates()
 
-  const load = useCallback(() => setTransactions(transactionService.getAll()), [])
+  const { data: transactions = [], isLoading } = useTransactions()
+  const refresh = useRefresh()
+  const load = () => refresh('transactions')
 
-  useEffect(() => { load() }, [load])
-
-  const handleDelete = (id: string) => {
-    transactionService.delete(id)
+  const handleDelete = async (id: string) => {
+    await transactionService.delete(id).catch(() => {})
     load()
   }
 
@@ -275,7 +281,7 @@ export default function Transactions() {
           {filtered.length === 0 ? (
             <div className="text-center py-12">
               <Typography color="text.secondary">
-                {transactions.length === 0 ? 'Todavía no tenés transacciones.' : 'No hay resultados para tu búsqueda.'}
+                {isLoading ? 'Cargando…' : transactions.length === 0 ? 'Todavía no tenés transacciones.' : 'No hay resultados para tu búsqueda.'}
               </Typography>
             </div>
           ) : (
@@ -297,7 +303,7 @@ export default function Transactions() {
                           <Chip label={tx.category} size="small" variant="outlined" sx={{ fontSize: 10, height: 18 }} />
                         </div>
                         <Typography variant="caption" color="text.secondary">
-                          {format(new Date(tx.date), "d 'de' MMMM yyyy", { locale: es })} · {PAYMENT_METHODS.find(m => m.value === tx.paymentMethod)?.label}
+                          {format(parseISO(tx.date), "d 'de' MMMM yyyy", { locale: es })} · {PAYMENT_METHODS.find(m => m.value === tx.paymentMethod)?.label}
                         </Typography>
                       </div>
                       <div className="shrink-0 text-right">

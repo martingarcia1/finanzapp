@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   CardContent,
@@ -21,9 +21,10 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import SavingsIcon from '@mui/icons-material/Savings'
 import AddCircleIcon from '@mui/icons-material/AddCircle'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
-import { savingsService } from '@/services/storage'
+import { savingsService } from '@/services/finance'
+import { useSavings, useRefresh } from '@/hooks/useFinanceData'
 import type { SavingsGoal, SavingsGoalFormData } from '@/types'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 import CurrencyToggle from '@/components/CurrencyToggle'
@@ -66,11 +67,20 @@ function GoalDialog({ open, onClose, onSave }: GoalDialogProps) {
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     if (!validate()) return
-    savingsService.create(form)
-    onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await savingsService.create(form)
+      onSave()
+      onClose()
+    } catch {
+      // El error se muestra en el snackbar global
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -128,7 +138,7 @@ function GoalDialog({ open, onClose, onSave }: GoalDialogProps) {
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained">Crear meta</Button>
+        <Button onClick={handleSubmit} variant="contained" disabled={saving}>Crear meta</Button>
       </DialogActions>
     </Dialog>
   )
@@ -148,12 +158,21 @@ function AddFundsDialog({ goal, onClose, onSave }: AddFundsDialogProps) {
 
   const remaining = goal ? goal.targetAmount - goal.currentAmount : 0
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
     const val = parseFloat(amount)
     if (!val || val <= 0) { setError('Ingresá un monto válido'); return }
-    savingsService.addFunds(goal!.id, val)
-    onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await savingsService.addFunds(goal!.id, val)
+      onSave()
+      onClose()
+    } catch {
+      // El error se muestra en el snackbar global
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -180,22 +199,21 @@ function AddFundsDialog({ goal, onClose, onSave }: AddFundsDialogProps) {
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancelar</Button>
-        <Button onClick={handleSubmit} variant="contained">Agregar</Button>
+        <Button onClick={handleSubmit} variant="contained" disabled={saving}>Agregar</Button>
       </DialogActions>
     </Dialog>
   )
 }
 
 export default function Savings() {
-  const [goals, setGoals] = useState<SavingsGoal[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [fundingGoal, setFundingGoal] = useState<SavingsGoal | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const { toARS } = useExchangeRates()
 
-  const load = useCallback(() => setGoals(savingsService.getAll()), [])
-
-  useEffect(() => { load() }, [load])
+  const { data: goals = [] } = useSavings()
+  const refresh = useRefresh()
+  const load = () => refresh('savings')
 
   const active = goals.filter((g) => !g.isCompleted)
   const completed = goals.filter((g) => g.isCompleted)
@@ -278,7 +296,7 @@ export default function Savings() {
                         <Typography variant="body1" sx={{ fontWeight: 700 }}>{goal.name}</Typography>
                         {goal.deadline && (
                           <Typography variant="caption" color="text.secondary">
-                            Límite: {format(new Date(goal.deadline), 'd MMM yyyy', { locale: es })}
+                            Límite: {format(parseISO(goal.deadline), 'd MMM yyyy', { locale: es })}
                           </Typography>
                         )}
                       </div>
@@ -286,7 +304,7 @@ export default function Savings() {
                     <div className="flex items-center gap-1">
                       {goal.isCompleted && <Chip label="Completada" color="success" size="small" />}
                       <Tooltip title="Eliminar">
-                        <IconButton size="small" color="error" onClick={() => { savingsService.delete(goal.id); load() }}>
+                        <IconButton size="small" color="error" onClick={() => savingsService.delete(goal.id).catch(() => {}).then(load)}>
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

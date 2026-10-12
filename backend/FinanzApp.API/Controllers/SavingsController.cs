@@ -16,7 +16,7 @@ public class SavingsController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static SavingsGoalDto ToDto(SavingsGoal s) =>
+    internal static SavingsGoalDto ToDto(SavingsGoal s) =>
         new(s.Id, s.UserId, s.Name, s.TargetAmount, s.CurrentAmount,
             s.Deadline, s.Description, s.IsCompleted, s.CompletedAt, s.CreatedAt, s.Currency);
 
@@ -45,12 +45,17 @@ public class SavingsController(AppDbContext db) : ControllerBase
             Name = dto.Name,
             TargetAmount = dto.TargetAmount,
             Currency = currency,
-            CurrentAmount = 0,
+            CurrentAmount = Math.Max(0, dto.CurrentAmount),
             Deadline = dto.Deadline,
             Description = dto.Description,
-            IsCompleted = false,
             CreatedAt = DateTime.UtcNow,
         };
+
+        if (entity.TargetAmount > 0 && entity.CurrentAmount >= entity.TargetAmount)
+        {
+            entity.IsCompleted = true;
+            entity.CompletedAt = DateTime.UtcNow;
+        }
 
         db.SavingsGoals.Add(entity);
         await db.SaveChangesAsync();

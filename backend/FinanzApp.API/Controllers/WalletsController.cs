@@ -16,7 +16,7 @@ public class WalletsController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static WalletDto ToDto(Wallet w) =>
+    internal static WalletDto ToDto(Wallet w) =>
         new(w.Id, w.UserId, w.Name, w.Type, w.Balance,
             w.Color, w.Description, w.CreatedAt, w.Currency);
 
@@ -100,6 +100,9 @@ public class WalletsController(AppDbContext db) : ControllerBase
 
         if (entity is null) return NotFound();
         if (entity.UserId != userId) return Forbid();
+
+        if (entity.Balance + dto.Delta < 0)
+            return BadRequest(new { message = "No podés retirar más de lo disponible." });
 
         entity.Balance += dto.Delta;
 

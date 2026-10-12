@@ -23,16 +23,18 @@ import {
   getDay,
   isToday,
   differenceInDays,
+  parseISO,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { transactionsInMonth } from '@/services/finance'
 import {
-  transactionService,
-  savingsService,
-  debtService,
-  walletService,
-  recurringService,
-  fixedExpenseService,
-} from '@/services/storage'
+  useTransactions,
+  useSavings,
+  useDebts,
+  useWallets,
+  useRecurring,
+  useFixedExpenses,
+} from '@/hooks/useFinanceData'
 import type { Transaction, Wallet, RecurringTransaction } from '@/types'
 import { WALLET_TYPES } from '@/types'
 import ExchangeRatesCard from '@/components/ExchangeRatesCard'
@@ -101,7 +103,7 @@ function TxRow({ tx }: { tx: Transaction }) {
           {tx.description || tx.category}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          {tx.category} · {format(new Date(tx.date), 'd MMM', { locale: es })}
+          {tx.category} · {format(parseISO(tx.date), 'd MMM', { locale: es })}
         </Typography>
       </div>
       <Typography
@@ -134,8 +136,8 @@ function getWeekEvents(recurring: RecurringTransaction[]): WeekEvent[] {
       const items = recurring
         .filter((r) => r.isActive)
         .filter((r) => {
-          if (day < new Date(r.startDate)) return false
-          if (r.endDate && day > new Date(r.endDate)) return false
+          if (day < parseISO(r.startDate)) return false
+          if (r.endDate && day > parseISO(r.endDate)) return false
           const dows = r.daysOfWeek ?? (r.dayOfWeek !== undefined ? [r.dayOfWeek] : [])
           return (
             (r.pattern === 'weekly' && dows.includes(dow)) ||
@@ -157,40 +159,44 @@ export default function Dashboard() {
 
   const { rate, toARS } = useExchangeRates()
 
+  const { data: transactions = [] } = useTransactions()
+  const { data: debts = [] } = useDebts()
+  const { data: allSavings = [] } = useSavings()
+  const { data: wallets = [] } = useWallets()
+  const { data: fixedExpenses = [] } = useFixedExpenses()
+  const { data: recurring = [] } = useRecurring()
+
   const data = useMemo(() => {
     // Totales en ARS: las transacciones en USD usan la cotización guardada al registrarlas
     const currentRate = rate?.sell ?? null
-    const monthTxs = transactionService.getByMonth(year, month)
+    const monthTxs = transactionsInMonth(transactions, year, month)
     const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + transactionARS(t, currentRate), 0)
     const monthExpenses = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + transactionARS(t, currentRate), 0)
 
-    const recentTxs = transactionService.getAll().slice(0, 5)
+    const recentTxs = transactions.slice(0, 5)
 
-    const allDebts = debtService.getAll().filter((d) => !d.isPaid)
-    const upcomingDebts = allDebts
-      .filter((d) => d.dueDate)
-      .map((d) => ({ ...d, daysLeft: differenceInDays(new Date(d.dueDate!), now) }))
+    const upcomingDebts = debts
+      .filter((d) => !d.isPaid && d.dueDate)
+      .map((d) => ({ ...d, daysLeft: differenceInDays(parseISO(d.dueDate!), now) }))
       .filter((d) => d.daysLeft <= 30)
       .sort((a, b) => a.daysLeft - b.daysLeft)
       .slice(0, 4)
 
-    const savings = savingsService.getAll().filter((s) => !s.isCompleted).slice(0, 4)
-    const wallets = walletService.getAll()
+    const savings = allSavings.filter((s) => !s.isCompleted).slice(0, 4)
     const walletsTotal = wallets.reduce((s, w) => s + toARS(w.balance, w.currency), 0)
-    const fixedTotal = fixedExpenseService.getTotalMonthly()
-    const recurring = recurringService.getAll()
+    const fixedTotal = fixedExpenses.filter((f) => f.isActive).reduce((s, f) => s + f.amount, 0)
     const weekEvents = getWeekEvents(recurring)
 
     return {
       monthIncome, monthExpenses,
       monthBalance: monthIncome - monthExpenses,
       recentTxs, upcomingDebts, savings,
-      wallets, walletsTotal, fixedTotal, weekEvents,
+      walletsTotal, fixedTotal, weekEvents,
     }
-  }, [year, month, rate, toARS]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [year, month, rate, toARS, transactions, debts, allSavings, wallets, fixedExpenses, recurring]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { monthIncome, monthExpenses, monthBalance, recentTxs, upcomingDebts,
-    savings, wallets, walletsTotal, fixedTotal, weekEvents } = data
+    savings, walletsTotal, fixedTotal, weekEvents } = data
 
   return (
     <div className="max-w-6xl mx-auto">

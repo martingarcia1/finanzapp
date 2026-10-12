@@ -16,6 +16,10 @@ public class TransactionsController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+    internal static TransactionDto ToDto(Transaction t) =>
+        new(t.Id, t.UserId, t.Type, t.Amount, t.Category, t.Description, t.Date,
+            t.PaymentMethod, t.CreatedAt, t.Currency, t.ExchangeRate);
+
     [HttpGet]
     public async Task<ActionResult<List<TransactionDto>>> GetAll(
         [FromQuery] int? year,

@@ -16,7 +16,7 @@ public class RecurringController(AppDbContext db) : ControllerBase
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static RecurringTransactionDto ToDto(RecurringTransaction r) =>
+    internal static RecurringTransactionDto ToDto(RecurringTransaction r) =>
         new(r.Id, r.UserId, r.Type, r.Amount, r.Category, r.Description,
             r.PaymentMethod, r.Pattern, r.DaysOfWeek, r.DayOfMonth,
             r.StartDate, r.EndDate, r.IsActive, r.CreatedAt);
